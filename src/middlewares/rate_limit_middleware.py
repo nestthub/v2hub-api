@@ -242,7 +242,7 @@ async def setup_rate_limiting(
     
     logger.info(
         "Rate limiting configured: public=%d rps, internal_no_token=%d rps, "
-        "internal_with_token=%d rps, whitelisted_ips=%d",
+        "internal_with_token=%d rps",
         int(public_rps),
         int(internal_no_token_rps),
         int(internal_with_token_rps),

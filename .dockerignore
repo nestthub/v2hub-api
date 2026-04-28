@@ -1,6 +1,9 @@
-data/
-*.db
-*.sqlite
-__pycache__
+certbot/
+certbot/conf/
+certbot/www/
+postgres_data/
+redis_data/
 .git
-.venv
+__pycache__/
+*.pyc
+.env

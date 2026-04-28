@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>v2hub API - Documentation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/tokyo-night-dark.min.css"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+
+    <style>
+      :root {
+        --bg-primary: #0a0e1a;
+        --bg-secondary: #0f1422;
+        --bg-tertiary: #1a1f35;
+        --bg-code: #161b2e;
+
+        --accent-primary: #00e5ff;
+        --accent-secondary: #7c3aed;
+        --accent-tertiary: #f472b6;
+
+        --text-primary: #e4e8f0;
+        --text-secondary: #9ca3af;
+        --text-muted: #6b7280;
+
+        --border-color: #1e293b;
+        --shadow-sm: 0 2px 8px rgba(0, 229, 255, 0.08);
+        --shadow-md: 0 8px 24px rgba(0, 229, 255, 0.12);
+        --shadow-lg: 0 16px 48px rgba(0, 229, 255, 0.16);
+
+        --gradient-primary: linear-gradient(135deg, #00e5ff 0%, #7c3aed 100%);
+        --gradient-accent: linear-gradient(135deg, #7c3aed 0%, #f472b6 100%);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        font-family:
+          "Outfit",
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        line-height: 1.7;
+        overflow-x: hidden;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background:
+          radial-gradient(
+            circle at 30% 50%,
+            rgba(0, 229, 255, 0.08) 0%,
+            transparent 50%
+          ),
+          radial-gradient(
+            circle at 70% 50%,
+            rgba(124, 58, 237, 0.08) 0%,
+            transparent 50%
+          );
+        animation: drift 30s ease-in-out infinite alternate;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      @keyframes drift {
+        0% {
+          transform: translate(0, 0) rotate(0deg);
+        }
+        100% {
+          transform: translate(50px, 50px) rotate(5deg);
+        }
+      }
+
+      .container {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        width: 300px;
+        background: var(--bg-secondary);
+        border-right: 1px solid var(--border-color);
+        padding: 2rem 0;
+        position: fixed;
+        height: 100vh;
+        overflow-y: auto;
+        box-shadow: var(--shadow-md);
+        z-index: 100;
+      }
+
+      .sidebar::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      .sidebar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .sidebar::-webkit-scrollbar-thumb {
+        background: var(--accent-primary);
+        border-radius: 3px;
+      }
+
+      .logo {
+        padding: 0 2rem 2rem;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 2rem;
+      }
+
+      .logo h1 {
+        font-size: 1.5rem;
+        font-weight: 800;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        letter-spacing: -0.5px;
+        margin-bottom: 0.25rem;
+      }
+
+      .logo p {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        font-weight: 300;
+      }
+
+      .search-box {
+        padding: 0 2rem;
+        margin-bottom: 2rem;
+      }
+
+      .search-input {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-family: "Outfit", sans-serif;
+        font-size: 0.875rem;
+        transition: all 0.3s ease;
+      }
+
+      .search-input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+        box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.1);
+      }
+
+      .search-input::placeholder {
+        color: var(--text-muted);
+      }
+
+      .nav-section {
+        margin-bottom: 2rem;
+      }
+
+      .nav-section-title {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--text-muted);
+        padding: 0 2rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .nav-links {
+        list-style: none;
+      }
+
+      .nav-link {
+        display: block;
+        padding: 0.75rem 2rem;
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 0.875rem;
+        font-weight: 400;
+        transition: all 0.2s ease;
+        border-left: 3px solid transparent;
+      }
+
+      .nav-link:hover {
+        color: var(--text-primary);
+        background: rgba(0, 229, 255, 0.05);
+        border-left-color: var(--accent-primary);
+      }
+
+      .nav-link.active {
+        color: var(--accent-primary);
+        background: rgba(0, 229, 255, 0.1);
+        border-left-color: var(--accent-primary);
+        font-weight: 600;
+      }
+
+      .main {
+        margin-left: 300px;
+        flex: 1;
+        padding: 3rem;
+        max-width: 1200px;
+      }
+
+      .header {
+        margin-bottom: 3rem;
+        padding-bottom: 2rem;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .header h1 {
+        font-size: 3rem;
+        font-weight: 800;
+        margin-bottom: 1rem;
+        letter-spacing: -1px;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .header p {
+        font-size: 1.125rem;
+        color: var(--text-secondary);
+        font-weight: 300;
+      }
+
+      .badges {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1.5rem;
+        flex-wrap: wrap;
+      }
+
+      .badge {
+        padding: 0.375rem 0.875rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      .content {
+        animation: fadeIn 0.5s ease;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .content h1 {
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin: 3rem 0 1.5rem;
+        letter-spacing: -0.5px;
+        color: var(--text-primary);
+      }
+
+      .content h1:first-child {
+        margin-top: 0;
+      }
+
+      .content h2 {
+        font-size: 2rem;
+        font-weight: 700;
+        margin: 2.5rem 0 1.25rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--border-color);
+        color: var(--text-primary);
+      }
+
+      .content h3 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 2rem 0 1rem;
+        color: var(--text-primary);
+      }
+
+      .content h4 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 1.5rem 0 0.75rem;
+        color: var(--accent-primary);
+      }
+
+      .content p {
+        margin-bottom: 1.25rem;
+        color: var(--text-secondary);
+        line-height: 1.8;
+      }
+
+      .content a {
+        color: var(--accent-primary);
+        text-decoration: none;
+        border-bottom: 1px solid transparent;
+        transition: all 0.2s ease;
+      }
+
+      .content a:hover {
+        border-bottom-color: var(--accent-primary);
+      }
+
+      .content ul,
+      .content ol {
+        margin-bottom: 1.5rem;
+        padding-left: 2rem;
+        color: var(--text-secondary);
+      }
+
+      .content li {
+        margin-bottom: 0.5rem;
+      }
+
+      .content code {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.875rem;
+        padding: 0.25rem 0.5rem;
+        background: var(--bg-code);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        color: var(--accent-primary);
+      }
+
+      .content pre {
+        margin: 1.5rem 0;
+        padding: 1.5rem;
+        background: var(--bg-code);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        overflow-x: auto;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .content pre code {
+        padding: 0;
+        background: transparent;
+        border: none;
+        color: var(--text-primary);
+      }
+
+      .content table {
+        width: 100%;
+        margin: 1.5rem 0;
+        border-collapse: collapse;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .content th {
+        background: var(--bg-tertiary);
+        padding: 1rem;
+        text-align: left;
+        font-weight: 600;
+        color: var(--text-primary);
+        border-bottom: 2px solid var(--border-color);
+      }
+
+      .content td {
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-secondary);
+      }
+
+      .content tr:last-child td {
+        border-bottom: none;
+      }
+
+      .content tr:hover {
+        background: rgba(0, 229, 255, 0.03);
+      }
+
+      .content blockquote {
+        margin: 1.5rem 0;
+        padding: 1rem 1.5rem;
+        border-left: 4px solid var(--accent-primary);
+        background: rgba(0, 229, 255, 0.05);
+        border-radius: 0 8px 8px 0;
+        color: var(--text-secondary);
+      }
+
+      .content hr {
+        margin: 3rem 0;
+        border: none;
+        height: 1px;
+        background: var(--border-color);
+      }
+
+      .loading {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 400px;
+        color: var(--text-muted);
+      }
+
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid var(--border-color);
+        border-top-color: var(--accent-primary);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .error {
+        padding: 2rem;
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: 12px;
+        color: #fca5a5;
+        margin: 2rem 0;
+      }
+
+      .mobile-menu-btn {
+        display: none;
+      }
+
+      @media (max-width: 768px) {
+        .sidebar {
+          transform: translateX(-100%);
+          transition: transform 0.3s ease;
+        }
+
+        .sidebar.open {
+          transform: translateX(0);
+        }
+
+        .main {
+          margin-left: 0;
+          padding: 2rem 1.5rem;
+        }
+
+        .header h1 {
+          font-size: 2rem;
+        }
+
+        .mobile-menu-btn {
+          display: block;
+          position: fixed;
+          top: 1rem;
+          left: 1rem;
+          z-index: 200;
+          padding: 0.75rem;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          color: var(--text-primary);
+          cursor: pointer;
+          box-shadow: var(--shadow-md);
+        }
+      }
+
+      .scroll-top {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        width: 50px;
+        height: 50px;
+        background: var(--gradient-primary);
+        border: none;
+        border-radius: 50%;
+        color: white;
+        font-size: 1.5rem;
+        cursor: pointer;
+        opacity: 0;
+        transition: all 0.3s ease;
+        box-shadow: var(--shadow-lg);
+        z-index: 50;
+      }
+
+      .scroll-top.visible {
+        opacity: 1;
+      }
+
+      .scroll-top:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 20px 60px rgba(0, 229, 255, 0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <button class="mobile-menu-btn" onclick="toggleSidebar()">☰</button>
+
+    <div class="container">
+      <aside class="sidebar" id="sidebar">
+        <div class="logo">
+          <h1>v2hub API</h1>
+          <p>Documentation Hub</p>
+        </div>
+
+        <div class="search-box">
+          <input
+            type="text"
+            class="search-input"
+            placeholder="Search docs..."
+            id="searchInput"
+            onkeyup="handleSearch(event)"
+          />
+        </div>
+
+        <nav>
+          <div class="nav-section">
+            <div class="nav-section-title">Getting Started</div>
+            <ul class="nav-links">
+              <li>
+                <a href="#readme" class="nav-link active">Overview</a>
+              </li>
+              <li>
+                <a href="#api" class="nav-link">API Reference</a>
+              </li>
+              <li>
+                <a href="#types" class="nav-link">Types & Schemas</a>
+              </li>
+            </ul>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <div class="header">
+          <h1>Documentation</h1>
+          <p>Comprehensive guide for v2hub API</p>
+          <div class="badges">
+            <span class="badge">Python 3.11+</span>
+            <span class="badge">FastAPI</span>
+            <span class="badge">PostgreSQL</span>
+            <span class="badge">Redis</span>
+            <span class="badge">Async</span>
+          </div>
+        </div>
+
+        <div id="content" class="content">
+          <div class="loading">
+            <div class="spinner"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <button class="scroll-top" id="scrollTop" onclick="scrollToTop()">↑</button>
+
+    <script>
+      const docMap = {
+        readme: "README.md",
+        api: "API_DOCUMENTATION.md",
+        types: "TYPES.md",
+      };
+
+      let currentDoc = null;
+
+      function slugify(text) {
+        return String(text)
+          .toLowerCase()
+          .replace(/<[^>]*>/g, "")
+          .replace(/&[a-z]+;/g, "")
+          .trim()
+          .replace(/[^\w\s-]/g, "")
+          .replace(/\s+/g, "-")
+          .replace(/-+/g, "-");
+      }
+
+      const renderer = new marked.Renderer();
+      renderer.heading = function (text, level, raw) {
+        const id = slugify(raw || text);
+        return `<h${level} id="${id}">${text}</h${level}>`;
+      };
+
+      marked.setOptions({
+        renderer,
+        highlight: function (code, lang) {
+          if (lang && hljs.getLanguage(lang)) {
+            return hljs.highlight(code, { language: lang }).value;
+          }
+          return hljs.highlightAuto(code).value;
+        },
+        breaks: true,
+        gfm: true,
+      });
+
+      function setActiveLink(hash) {
+        document.querySelectorAll(".nav-link").forEach((link) => {
+          link.classList.remove("active");
+        });
+
+        const active = document.querySelector(`a[href="#${hash}"]`);
+        if (active) {
+          active.classList.add("active");
+        }
+      }
+
+      function scrollToHash() {
+        const hash = decodeURIComponent(window.location.hash.slice(1));
+        if (!hash) return;
+
+        const el = document.getElementById(hash);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+
+      async function loadDoc(filename) {
+        const content = document.getElementById("content");
+        content.innerHTML =
+          '<div class="loading"><div class="spinner"></div></div>';
+
+        if (window.innerWidth <= 768) {
+          document.getElementById("sidebar").classList.remove("open");
+        }
+
+        try {
+          const response = await fetch(filename);
+          if (!response.ok) {
+            throw new Error("Failed to load documentation");
+          }
+
+          const markdown = await response.text();
+          content.innerHTML = marked.parse(markdown);
+
+          content.querySelectorAll("pre code").forEach((block) => {
+            hljs.highlightElement(block);
+          });
+
+          currentDoc = filename;
+
+          requestAnimationFrame(() => {
+            scrollToHash();
+          });
+        } catch (error) {
+          content.innerHTML = `
+            <div class="error">
+              <h3>Error Loading Documentation</h3>
+              <p>Failed to load ${filename}. Please make sure the file exists in the same directory.</p>
+              <p><small>${error.message}</small></p>
+            </div>
+          `;
+        }
+      }
+
+      function route() {
+        const hash = decodeURIComponent(window.location.hash.slice(1));
+
+        if (docMap[hash]) {
+          setActiveLink(hash);
+          if (currentDoc !== docMap[hash]) {
+            loadDoc(docMap[hash]);
+          } else {
+            requestAnimationFrame(() => {
+              scrollToHash();
+            });
+          }
+          return;
+        }
+
+        if (!window.location.hash) {
+          window.location.replace("#readme");
+          return;
+        }
+
+        scrollToHash();
+      }
+
+      function handleSearch(event) {
+        const query = event.target.value.toLowerCase();
+        const links = document.querySelectorAll(".nav-link");
+
+        links.forEach((link) => {
+          const text = link.textContent.toLowerCase();
+          link.style.display = text.includes(query) ? "block" : "none";
+        });
+      }
+
+      function toggleSidebar() {
+        const sidebar = document.getElementById("sidebar");
+        sidebar.classList.toggle("open");
+      }
+
+      function scrollToTop() {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+
+      window.addEventListener("scroll", () => {
+        const scrollTop = document.getElementById("scrollTop");
+        if (window.scrollY > 500) {
+          scrollTop.classList.add("visible");
+        } else {
+          scrollTop.classList.remove("visible");
+        }
+      });
+
+      window.addEventListener("hashchange", route);
+
+      window.addEventListener("DOMContentLoaded", () => {
+        route();
+      });
+    </script>
+  </body>
+</html>

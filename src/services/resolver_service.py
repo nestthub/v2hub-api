@@ -161,7 +161,7 @@ class ResolverService:
             logger.warning(f"Subscription {token} not found")
             return
 
-        if subscription.description and not result.description:
+        if subscription.description and result.description == settings.domain:
             result.description = subscription.description
         
         # Process each source

@@ -14,96 +14,106 @@ x-app-build: &app-build
 services:
   api:
     <<: *app-build
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: >
+      uvicorn src.main:app
+      --host 0.0.0.0
+      --port 8000
+      --proxy-headers
+      --forwarded-allow-ips="*"
     expose:
       - "8000"
-    volumes:
-      - ./alembic:/app/alembic:ro
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8000/health'')"',
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-  nginx:
-    image: nginx:1.27-alpine
-    depends_on:
-      api:
-        condition: service_healthy
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx:/etc/nginx/conf.d:ro
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-    restart: unless-stopped
+    networks:
+      - backend
+      - frontend
 
   worker:
     <<: *app-build
     command: >
       celery -A worker.celery_app worker
       --loglevel=info
-      --concurrency=1
+      --concurrency=3
       --queues=celery
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./alembic:/app/alembic
     restart: unless-stopped
+    networks:
+      - backend
 
   beat:
     <<: *app-build
     command: >
       celery -A worker.celery_app beat
       --loglevel=info
-      --scheduler celery.beat:PersistentScheduler
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+      --schedule=/app/celerybeat/schedule.db
+    volumes:
+      - celerybeat_data:/app/celerybeat
     restart: unless-stopped
+    networks:
+      - backend
 
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: v2hub
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "35432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d v2hub"]
       interval: 5s
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    networks:
+      - backend
 
   redis:
     image: redis:7-alpine
     command: redis-server --save 60 1 --loglevel warning
     volumes:
       - redis_data:/data
-    ports:
-      - "36379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
     restart: unless-stopped
+    networks:
+      - backend
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    restart: unless-stopped
+    networks:
+      - frontend
+
+  certbot-renew:
+    image: certbot/certbot
+    container_name: certbot-renew
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: /bin/sh
+    command: -c "while true; do certbot renew --webroot -w /var/www/certbot --quiet --deploy-hook 'docker exec nginx nginx -s reload'; sleep 12h; done"
+    restart: unless-stopped
+    networks:
+      - frontend
 
 volumes:
   postgres_data:
   redis_data:
+  celerybeat_data:
+
+networks:
+  backend:
+    internal: true
+  frontend:

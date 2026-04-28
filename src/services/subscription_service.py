@@ -51,7 +51,7 @@ from src.utils.config_parser import (
     validate_proxy_config,
 )
 from src.utils.http_client import get_http_client
-from src.utils.url_validator import validate_external_url
+from src.utils.url_validator import is_internal, validate_external_url
 
 from src.schemas import RefreshSubscriptionResponse
 
@@ -907,7 +907,7 @@ class SubscriptionService:
     
     async def _detect_source_type(self, source: str) -> SourceType:
         """Detect the type of source."""
-        if source.startswith("https://subctrl.link/sub/"):
+        if is_internal(source, settings.domain):
             return SourceType.INTERNAL_TOKEN
         # Check if it's an HTTP URL
         if is_http_url(source):

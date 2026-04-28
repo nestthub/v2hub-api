@@ -156,7 +156,7 @@ class Settings(BaseSettings):
         description="HTTP timeout for external subscriptions (seconds)"
     )
     fetch_user_agent: str = Field(
-        default="VPN-Subscription-Aggregator/2.0",
+        default="v2hub/1.0",
         validation_alias="FETCH_USER_AGENT"
     )
     fetch_max_redirects: int = Field(

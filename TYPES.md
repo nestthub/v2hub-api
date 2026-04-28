@@ -1,0 +1,1111 @@
+# Data Types and Schemas Reference
+
+Complete reference for all data types, models, and schemas used in the VPN Subscription API.
+
+---
+
+## Table of Contents
+
+- [Base Types](#base-types)
+- [Request Models](#request-models)
+- [Response Models](#response-models)
+- [Admin Models](#admin-models)
+- [Enumerations](#enumerations)
+- [Validation Rules](#validation-rules)
+
+---
+
+## Base Types
+
+### BaseModel
+
+All Pydantic models inherit from a custom `BaseModel` with consistent configuration.
+
+```python
+class BaseModel(PydanticBaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        use_enum_values=True,
+    )
+```
+
+**Configuration**:
+
+- `from_attributes=True`: Enable ORM mode for SQLAlchemy models
+- `str_strip_whitespace=True`: Automatically strip whitespace from strings
+- `validate_assignment=True`: Validate on field assignment
+- `use_enum_values=True`: Use enum values instead of enum objects
+
+---
+
+## Request Models
+
+### SubscriptionCreateRequest
+
+Create a new subscription.
+
+```python
+class SubscriptionCreateRequest(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=64)]
+    description: Annotated[str, Field(max_length=64)] | None = None
+    sources: Annotated[list[str], Field(max_length=150)] = []
+```
+
+**Fields**:
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| `name` | `string` | Yes | 1-64 chars | Subscription name (unique per user) |
+| `description` | `string` | No | Max 64 chars | Optional description |
+| `sources` | `array[string]` | No | Max 150 items | Initial sources (configs, URLs, tokens) |
+
+**Example**:
+
+```json
+{
+  "name": "My VPN Collection",
+  "description": "Personal servers",
+  "sources": [
+    "vless://uuid@server:port#Server1",
+    "https://provider.com/subscription"
+  ]
+}
+```
+
+**Validation**:
+
+- Name must be unique per user
+- Sources are automatically cleaned and deduplicated
+- Invalid sources are rejected with validation error
+
+---
+
+### SubscriptionUpdateRequest
+
+Update subscription metadata.
+
+```python
+class SubscriptionUpdateRequest(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    description: Annotated[str, Field(max_length=64)] | None = None
+
+    @model_validator(mode='after')
+    def check_at_least_one_field(self) -> 'SubscriptionUpdateRequest':
+        if self.name is None and self.description is None:
+            raise ValueError("At least one field must be provided")
+        return self
+```
+
+**Fields**:
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `name` | `string` | No* | 1-64 chars |
+| `description` | `string` | No* | Max 64 chars |
+
+\*At least one field must be provided.
+
+**Example**:
+
+```json
+{
+  "name": "Updated Name"
+}
+```
+
+---
+
+### SourceAddRequest
+
+Add sources to a subscription.
+
+```python
+class SourceAddRequest(BaseModel):
+    sources: Annotated[list[str], Field(min_length=1, max_length=150)]
+```
+
+**Fields**:
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `sources` | `array[string]` | Yes | 1-150 items |
+
+**Example**:
+
+```json
+{
+  "sources": [
+    "vless://uuid@server:port#NewServer",
+    "https://new-provider.com/sub"
+  ]
+}
+```
+
+**Notes**:
+
+- Duplicates are automatically filtered
+- Each source is validated and classified (CONFIG, EXTERNAL_URL, or INTERNAL_TOKEN)
+
+---
+
+### SourceReplaceRequest
+
+Replace all sources atomically.
+
+```python
+class SourceReplaceRequest(BaseModel):
+    sources: Annotated[list[str], Field(max_length=150)]
+```
+
+**Fields**:
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `sources` | `array[string]` | Yes | Max 150 items, can be empty |
+
+**Example**:
+
+```json
+{
+  "sources": [
+    "vless://uuid@server1:port#Server1",
+    "vless://uuid@server2:port#Server2"
+  ]
+}
+```
+
+**Notes**:
+
+- Empty array is allowed (removes all sources)
+- This is an atomic operation - all existing sources deleted first
+
+---
+
+### SourceRemoveRequest
+
+Remove specific sources by ID.
+
+```python
+class SourceRemoveRequest(BaseModel):
+    source_ids: Annotated[list[str], Field(min_length=1)]
+```
+
+**Fields**:
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `source_ids` | `array[string]` | Yes | Min 1 item |
+
+**Example**:
+
+```json
+{
+  "source_ids": ["hash1", "hash2", "hash3"]
+}
+```
+
+**Validation**:
+
+- All IDs must exist in the subscription
+- Returns 404 if any ID not found
+
+---
+
+### CommentUpdateRequest
+
+Update comment for a config.
+
+```python
+class CommentUpdateRequest(BaseModel):
+    config_id: Annotated[str, Field(min_length=1)]
+    comment: Annotated[str, Field(max_length=256)] | None = None
+```
+
+**Fields**:
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `config_id` | `string` | Yes | Min 1 char |
+| `comment` | `string` | No | Max 256 chars |
+
+**Example**:
+
+```json
+{
+  "config_id": "abc123def456",
+  "comment": "Fast US Server - Los Angeles"
+}
+```
+
+**Notes**:
+
+- If comment is null/empty, uses domain name as default
+- Same config can have different comments in different subscriptions
+- Comment is appended to config using `#` when resolving
+
+---
+
+### UpsertUserRequest
+
+Create or update user (internal use).
+
+```python
+class UpsertUserRequest(BaseModel):
+    user_id: Annotated[int, Field(gt=0)]
+```
+
+**Fields**:
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `user_id` | `integer` | Yes | > 0 |
+
+---
+
+## Response Models
+
+### SourceOut
+
+Represents a source in responses.
+
+```python
+class SourceOut(BaseModel):
+    id: str
+    source_type: SourceType
+    data: str
+    order_index: int
+    created_at: datetime
+    updated_at: datetime
+```
+
+**Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Source hash (unique identifier) |
+| `source_type` | `enum` | Type: CONFIG, EXTERNAL_URL, or INTERNAL_TOKEN |
+| `data` | `string` | Full source data (config URI, URL, or token reference) |
+| `order_index` | `integer` | Display order (0-indexed) |
+| `created_at` | `datetime` | ISO 8601 creation timestamp |
+| `updated_at` | `datetime` | ISO 8601 last update timestamp |
+
+**Example**:
+
+```json
+{
+  "id": "a1b2c3d4e5f6",
+  "source_type": "config",
+  "data": "vless://uuid@server:port?encryption=none#Server1",
+  "order_index": 0,
+  "created_at": "2026-04-27T10:00:00Z",
+  "updated_at": "2026-04-27T10:00:00Z"
+}
+```
+
+---
+
+### SubscriptionListItem
+
+Subscription in list view (without sources).
+
+```python
+class SubscriptionListItem(BaseModel):
+    token: str
+    name: str
+    description: str | None
+    sources_count: int
+    created_at: datetime
+    updated_at: datetime
+```
+
+**Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `token` | `string` | Unique subscription token |
+| `name` | `string` | Subscription name |
+| `description` | `string\|null` | Optional description |
+| `sources_count` | `integer` | Total number of resolved configs |
+| `created_at` | `datetime` | Creation timestamp |
+| `updated_at` | `datetime` | Last update timestamp |
+
+**Example**:
+
+```json
+{
+  "token": "abc123xyz456",
+  "name": "My VPN",
+  "description": "Personal collection",
+  "sources_count": 25,
+  "created_at": "2026-04-27T10:00:00Z",
+  "updated_at": "2026-04-27T12:30:00Z"
+}
+```
+
+---
+
+### SubscriptionResponse
+
+Complete subscription details with sources.
+
+```python
+class SubscriptionResponse(BaseModel):
+    token: str
+    name: str
+    description: str | None
+    sources: list[SourceOut]
+    sources_count: int
+    created_at: datetime
+    updated_at: datetime
+```
+
+**Fields**:
+All fields from `SubscriptionListItem` plus:
+| Field | Type | Description |
+|-------|------|-------------|
+| `sources` | `array[SourceOut]` | Full source details |
+
+**Example**:
+
+```json
+{
+  "token": "abc123xyz456",
+  "name": "My VPN",
+  "description": "Personal collection",
+  "sources": [
+    {
+      "id": "hash1",
+      "source_type": "config",
+      "data": "vless://...",
+      "order_index": 0,
+      "created_at": "2026-04-27T10:00:00Z",
+      "updated_at": "2026-04-27T10:00:00Z"
+    }
+  ],
+  "sources_count": 25,
+  "created_at": "2026-04-27T10:00:00Z",
+  "updated_at": "2026-04-27T12:30:00Z"
+}
+```
+
+---
+
+### RefreshSubscriptionResponse
+
+Result of subscription refresh operation.
+
+```python
+class RefreshSubscriptionResponse(BaseModel):
+    refreshed: int
+    failed: int
+    skipped: int
+    total: int
+    message: str
+    errors: list[str] = []
+```
+
+**Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `refreshed` | `integer` | Successfully refreshed sources |
+| `failed` | `integer` | Sources that failed to refresh |
+| `skipped` | `integer` | Sources skipped (CONFIG, INTERNAL_TOKEN) |
+| `total` | `integer` | Total sources processed |
+| `message` | `string` | Status message |
+| `errors` | `array[string]` | Error messages for failed sources |
+
+**Example**:
+
+```json
+{
+  "refreshed": 3,
+  "failed": 1,
+  "skipped": 2,
+  "total": 6,
+  "message": "Refresh completed with some failures",
+  "errors": ["https://dead-provider.com/sub: Connection timeout"]
+}
+```
+
+---
+
+### ResolvedConfig
+
+Resolved subscription configuration (internal).
+
+```python
+class ResolvedConfig(BaseModel):
+    configs: list[str]
+    description: str
+```
+
+**Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `configs` | `array[string]` | List of base64-encoded proxy configs |
+| `description` | `string` | Subscription description |
+
+---
+
+## Admin Models
+
+### UserCreateRequest
+
+Admin request to create user.
+
+```python
+class UserCreateRequest(AdminBaseModel):
+    user_id: Annotated[int, Field(gt=0)]
+```
+
+**Fields**:
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `user_id` | `integer` | Yes | > 0 |
+
+**Example**:
+
+```json
+{
+  "user_id": 12345
+}
+```
+
+---
+
+### UserResponse
+
+User account information.
+
+```python
+class UserResponse(AdminBaseModel):
+    user_hash: str
+    user_id: int
+    api_token: str
+    is_active: bool
+```
+
+**Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `user_hash` | `string` | SHA-256 hash of user credentials |
+| `user_id` | `integer` | External user ID |
+| `api_token` | `string` | Full API token (format: `{user_id}:{hash}`) |
+| `is_active` | `boolean` | Account active status |
+
+**Example**:
+
+```json
+{
+  "user_hash": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+  "user_id": 12345,
+  "api_token": "12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+  "is_active": true
+}
+```
+
+---
+
+### UserCreateResponse
+
+Response after user creation.
+
+```python
+class UserCreateResponse(AdminBaseModel):
+    user_hash: str
+    user_id: int
+    api_token: str
+    is_active: bool
+```
+
+Same structure as `UserResponse`.
+
+---
+
+### UserStatusUpdateRequest
+
+Update user account status.
+
+```python
+class UserStatusUpdateRequest(AdminBaseModel):
+    is_active: bool
+```
+
+**Fields**:
+| Field | Type | Required |
+|-------|------|----------|
+| `is_active` | `boolean` | Yes |
+
+**Example**:
+
+```json
+{
+  "is_active": false
+}
+```
+
+---
+
+### TokenRefreshRequest
+
+Request to refresh user token.
+
+```python
+class TokenRefreshRequest(AdminBaseModel):
+    user_id: Annotated[int, Field(gt=0)]
+```
+
+**Fields**:
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `user_id` | `integer` | Yes | > 0 |
+
+---
+
+### TokenRefreshResponse
+
+New token after refresh.
+
+```python
+class TokenRefreshResponse(AdminBaseModel):
+    user_id: int
+    new_api_token: str
+```
+
+**Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `user_id` | `integer` | User ID |
+| `new_api_token` | `string` | New API token |
+
+**Example**:
+
+```json
+{
+  "user_id": 12345,
+  "new_api_token": "12345:z9y8x7w6v5u4t3s2r1q0p9o8n7m6l5k4"
+}
+```
+
+---
+
+### IPBanRequest
+
+Request to ban an IP address.
+
+```python
+class IPBanRequest(AdminBaseModel):
+    ip_address: Annotated[str, Field(min_length=7, max_length=45)]
+    duration_seconds: Annotated[int, Field(gt=0)] | None = None
+```
+
+**Fields**:
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `ip_address` | `string` | Yes | Valid IPv4/IPv6 |
+| `duration_seconds` | `integer` | No | > 0, null = permanent |
+
+**Example**:
+
+```json
+{
+  "ip_address": "192.168.1.100",
+  "duration_seconds": 3600
+}
+```
+
+---
+
+### IPBanStatusResponse
+
+IP ban status information.
+
+```python
+class IPBanStatusResponse(AdminBaseModel):
+    ip_address: str
+    is_banned: bool
+    banned_until: datetime | None
+    remaining_seconds: int | None
+```
+
+**Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `ip_address` | `string` | IP address |
+| `is_banned` | `boolean` | Whether IP is banned |
+| `banned_until` | `datetime\|null` | Ban expiration (null = permanent) |
+| `remaining_seconds` | `integer\|null` | Seconds until unban (null = permanent) |
+
+**Example**:
+
+```json
+{
+  "ip_address": "192.168.1.100",
+  "is_banned": true,
+  "banned_until": "2026-04-27T11:00:00Z",
+  "remaining_seconds": 1800
+}
+```
+
+---
+
+### IPBanEntry
+
+Single ban list entry.
+
+```python
+class IPBanEntry(AdminBaseModel):
+    ip_address: str
+    banned_until: datetime | None
+```
+
+**Example**:
+
+```json
+{
+  "ip_address": "192.168.1.100",
+  "banned_until": "2026-04-27T11:00:00Z"
+}
+```
+
+---
+
+### IPBanListResponse
+
+List of banned IPs.
+
+```python
+class IPBanListResponse(AdminBaseModel):
+    entries: list[IPBanEntry]
+    total: int
+```
+
+**Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `entries` | `array[IPBanEntry]` | List of ban entries |
+| `total` | `integer` | Total count |
+
+**Example**:
+
+```json
+{
+  "entries": [
+    {
+      "ip_address": "192.168.1.100",
+      "banned_until": "2026-04-27T11:00:00Z"
+    },
+    {
+      "ip_address": "10.0.0.50",
+      "banned_until": null
+    }
+  ],
+  "total": 2
+}
+```
+
+---
+
+### IPUnbanRequest
+
+Request to unban an IP.
+
+```python
+class IPUnbanRequest(AdminBaseModel):
+    ip_address: Annotated[str, Field(min_length=7, max_length=45)]
+```
+
+**Fields**:
+| Field | Type | Required |
+|-------|------|----------|
+| `ip_address` | `string` | Yes |
+
+---
+
+### IPUnbanResponse
+
+Result of unban operation.
+
+```python
+class IPUnbanResponse(AdminBaseModel):
+    ip_address: str
+    was_banned: bool
+    message: str
+```
+
+**Fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `ip_address` | `string` | IP address |
+| `was_banned` | `boolean` | Whether IP was previously banned |
+| `message` | `string` | Result message |
+
+**Example**:
+
+```json
+{
+  "ip_address": "192.168.1.100",
+  "was_banned": true,
+  "message": "IP unbanned successfully"
+}
+```
+
+---
+
+### WhitelistAddRequest
+
+Add IP to whitelist.
+
+```python
+class WhitelistAddRequest(AdminBaseModel):
+    ip_address: Annotated[str, Field(min_length=7, max_length=45)]
+    description: Annotated[str, Field(max_length=255)] | None = None
+```
+
+**Fields**:
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `ip_address` | `string` | Yes | Valid IPv4/IPv6/CIDR |
+| `description` | `string` | No | Max 255 chars |
+
+**Example**:
+
+```json
+{
+  "ip_address": "10.0.0.0/24",
+  "description": "Office network"
+}
+```
+
+---
+
+### WhitelistEntry
+
+Single whitelist entry.
+
+```python
+class WhitelistEntry(AdminBaseModel):
+    ip_address: str
+    description: str | None
+    added_at: datetime
+```
+
+**Example**:
+
+```json
+{
+  "ip_address": "10.0.0.0/24",
+  "description": "Office network",
+  "added_at": "2026-04-20T10:00:00Z"
+}
+```
+
+---
+
+### WhitelistListResponse
+
+List of whitelisted IPs.
+
+```python
+class WhitelistListResponse(AdminBaseModel):
+    entries: list[WhitelistEntry]
+    total: int
+```
+
+**Example**:
+
+```json
+{
+  "entries": [
+    {
+      "ip_address": "10.0.0.0/24",
+      "description": "Office network",
+      "added_at": "2026-04-20T10:00:00Z"
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+### WhitelistRemoveRequest
+
+Remove IP from whitelist.
+
+```python
+class WhitelistRemoveRequest(AdminBaseModel):
+    ip_address: Annotated[str, Field(min_length=7, max_length=45)]
+```
+
+---
+
+### WhitelistRemoveResponse
+
+Result of whitelist removal.
+
+```python
+class WhitelistRemoveResponse(AdminBaseModel):
+    ip_address: str
+    was_whitelisted: bool
+    message: str
+```
+
+**Example**:
+
+```json
+{
+  "ip_address": "10.0.0.0/24",
+  "was_whitelisted": true,
+  "message": "IP removed from whitelist"
+}
+```
+
+---
+
+### WhitelistAddResponse
+
+Result of whitelist addition.
+
+```python
+class WhitelistAddResponse(AdminBaseModel):
+    ip_address: str
+    description: str | None
+    message: str
+```
+
+**Example**:
+
+```json
+{
+  "ip_address": "10.0.0.0/24",
+  "description": "Office network",
+  "message": "IP added to whitelist successfully"
+}
+```
+
+---
+
+## Enumerations
+
+### SourceType
+
+Classification of subscription sources.
+
+```python
+class SourceType(str, Enum):
+    CONFIG = "config"
+    EXTERNAL_URL = "external_url"
+    INTERNAL_TOKEN = "internal_token"
+```
+
+**Values**:
+| Value | Description | Example |
+|-------|-------------|---------|
+| `CONFIG` | Direct proxy configuration URI | `vless://uuid@server:port` |
+| `EXTERNAL_URL` | External subscription URL | `https://provider.com/sub` |
+| `INTERNAL_TOKEN` | Reference to another subscription | `https://yourdomain.com/sub/token` |
+
+**Detection Logic**:
+
+```python
+def detect_source_type(source: str, domain: str) -> SourceType:
+    if source.startswith(tuple(ProxyProtocol)):
+        return SourceType.CONFIG
+    elif source.startswith(f"https://{domain}/sub/"):
+        return SourceType.INTERNAL_TOKEN
+    else:
+        return SourceType.EXTERNAL_URL
+```
+
+---
+
+### ProxyProtocol
+
+Supported proxy protocols.
+
+```python
+class ProxyProtocol(str, Enum):
+    VLESS = "vless"
+    VMESS = "vmess"
+    TROJAN = "trojan"
+    SHADOWSOCKS = "ss"
+    HYSTERIA = "hysteria"
+    HYSTERIA2 = "hysteria2"
+    TUIC = "tuic"
+```
+
+**Protocols**:
+| Protocol | URI Prefix | Common Ports |
+|----------|-----------|--------------|
+| VLESS | `vless://` | 443, 80 |
+| VMess | `vmess://` | 443, 80 |
+| Trojan | `trojan://` | 443 |
+| Shadowsocks | `ss://` | 8388 |
+| Hysteria | `hysteria://` | 36712 |
+| Hysteria 2 | `hysteria2://` | 443 |
+| TUIC | `tuic://` | 443 |
+
+---
+
+## Validation Rules
+
+### String Constraints
+
+| Field                    | Min Length | Max Length | Pattern               |
+| ------------------------ | ---------- | ---------- | --------------------- |
+| Subscription name        | 1          | 64         | Any (unique per user) |
+| Subscription description | 0          | 64         | Any                   |
+| Config comment           | 0          | 256        | Any                   |
+| IP address               | 7          | 45         | IPv4/IPv6/CIDR        |
+| Whitelist description    | 0          | 255        | Any                   |
+
+### Numeric Constraints
+
+| Field                    | Min | Max | Default          |
+| ------------------------ | --- | --- | ---------------- |
+| User ID                  | 1   | -   | -                |
+| Ban duration             | 1   | -   | null (permanent) |
+| Sources per subscription | 0   | 150 | -                |
+| Subscriptions per user   | 0   | 3   | -                |
+| Nesting depth            | 0   | 3   | -                |
+
+### Custom Validators
+
+#### Source Cleaning
+
+```python
+@field_validator('sources', mode='before')
+@classmethod
+def _clean_sources(cls, v: Any) -> list[str]:
+    if not isinstance(v, list):
+        raise ValueError('sources must be a list')
+
+    # Remove duplicates while preserving order
+    seen = set()
+    cleaned = []
+    for source in v:
+        if isinstance(source, str):
+            source = source.strip()
+            if source and source not in seen:
+                seen.add(source)
+                cleaned.append(source)
+
+    return cleaned
+```
+
+#### At Least One Field
+
+```python
+@model_validator(mode='after')
+def check_at_least_one_field(self):
+    if self.name is None and self.description is None:
+        raise ValueError("At least one field must be provided")
+    return self
+```
+
+---
+
+## Type Aliases
+
+Common type aliases used throughout the codebase:
+
+```python
+from typing import Annotated
+from pydantic import Field
+
+# Bounded strings
+ShortString = Annotated[str, Field(max_length=64)]
+MediumString = Annotated[str, Field(max_length=255)]
+LongString = Annotated[str, Field(max_length=512)]
+
+# IDs
+PositiveInt = Annotated[int, Field(gt=0)]
+NonNegativeInt = Annotated[int, Field(ge=0)]
+
+# Lists
+SourceList = Annotated[list[str], Field(max_length=150)]
+IPAddress = Annotated[str, Field(min_length=7, max_length=45)]
+```
+
+---
+
+## JSON Schema Examples
+
+### Complete Request/Response Cycle
+
+**Request: Create Subscription**
+
+```json
+{
+  "name": "My VPN Collection",
+  "description": "Personal servers and providers",
+  "sources": [
+    "vless://uuid@server1.com:443?encryption=none&security=tls&sni=server1.com&type=tcp#Server1",
+    "vmess://eyJhZGQiOi...base64...#Server2",
+    "https://provider.com/subscription",
+    "https://api.example.com/sub/another-token"
+  ]
+}
+```
+
+**Response: Subscription Created**
+
+```json
+{
+  "token": "abc123xyz456",
+  "name": "My VPN Collection",
+  "description": "Personal servers and providers",
+  "sources": [
+    {
+      "id": "d5e6f7a8b9c0",
+      "source_type": "config",
+      "data": "vless://uuid@server1.com:443?encryption=none&security=tls&sni=server1.com&type=tcp#Server1",
+      "order_index": 0,
+      "created_at": "2026-04-27T10:00:00.123456Z",
+      "updated_at": "2026-04-27T10:00:00.123456Z"
+    },
+    {
+      "id": "a1b2c3d4e5f6",
+      "source_type": "config",
+      "data": "vmess://eyJhZGQiOi...base64...#Server2",
+      "order_index": 1,
+      "created_at": "2026-04-27T10:00:00.234567Z",
+      "updated_at": "2026-04-27T10:00:00.234567Z"
+    },
+    {
+      "id": "x7y8z9a0b1c2",
+      "source_type": "external_url",
+      "data": "https://provider.com/subscription",
+      "order_index": 2,
+      "created_at": "2026-04-27T10:00:00.345678Z",
+      "updated_at": "2026-04-27T10:00:00.345678Z"
+    },
+    {
+      "id": "m3n4o5p6q7r8",
+      "source_type": "internal_token",
+      "data": "https://api.example.com/sub/another-token",
+      "order_index": 3,
+      "created_at": "2026-04-27T10:00:00.456789Z",
+      "updated_at": "2026-04-27T10:00:00.456789Z"
+    }
+  ],
+  "sources_count": 47,
+  "created_at": "2026-04-27T10:00:00.123456Z",
+  "updated_at": "2026-04-27T10:00:00.123456Z"
+}
+```
+
+---
+
+## OpenAPI Schema
+
+The API automatically generates OpenAPI 3.1.0 schema available at `/openapi.json`.
+
+**Key features**:
+
+- Full request/response schemas
+- Validation rules and constraints
+- Example values for all fields
+- Error response schemas
+- Security scheme definitions
+
+Access at: `https://api.example.com/openapi.json`
+
+---
+
+**Last Updated**: April 27, 2026

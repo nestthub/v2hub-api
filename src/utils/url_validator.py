@@ -133,17 +133,22 @@ def is_url_safe(url: str) -> bool:
 
 
 def extract_hostname(url: str) -> Optional[str]:
-    """
-    Extract hostname from URL.
-    
-    Args:
-        url: URL to parse
-        
-    Returns:
-        Hostname or None if invalid
-    """
     try:
         parsed = urlparse(url)
-        return parsed.hostname
+
+        if parsed.hostname:
+            return parsed.hostname.lower()
+
+        # fallback: если нет схемы (example.com/...)
+        parsed = urlparse(f"//{url}")
+        return parsed.hostname.lower() if parsed.hostname else None
+
     except Exception:
         return None
+
+
+def is_internal(source: str, domain: str) -> bool:
+    src_host = extract_hostname(source)
+    domain_host = extract_hostname(domain)
+
+    return src_host == domain_host
