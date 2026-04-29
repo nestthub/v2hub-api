@@ -1,0 +1,20 @@
+# Web framework
+fastapi
+uvicorn[standard]
+scalar-fastapi
+
+# Database
+sqlalchemy[asyncio]
+asyncpg
+alembic
+
+# Cache / broker
+redis[hiredis]
+celery
+
+# HTTP client (for external subscription fetching)
+aiohttp
+
+# Config / validation
+pydantic
+pydantic-settings
