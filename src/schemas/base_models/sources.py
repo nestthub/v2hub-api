@@ -7,6 +7,7 @@ from pydantic import Field, field_validator
 
 from src.core.config import settings
 from src.core.enums import SourceType
+from src.utils.config_parser import normalize_source
 
 
 
@@ -40,9 +41,16 @@ class SourceAddRequest(BaseModelConfig):
     @classmethod
     def clean_sources(cls, v: list[str]) -> list[str]:
         v = _clean_sources(v)
-        if not v:
+    
+        cleaned = []
+        for s in v:
+            s = normalize_source(s, settings.max_comment_length)
+            cleaned.append(s)
+    
+        if not cleaned:
             raise ValueError("sources list is empty after deduplication")
-        return v
+    
+        return cleaned
 
 
 class SourceReplaceRequest(BaseModelConfig):
@@ -54,7 +62,12 @@ class SourceReplaceRequest(BaseModelConfig):
     @field_validator("sources", mode="before")
     @classmethod
     def clean_sources(cls, v: list[str]) -> list[str]:
-        return _clean_sources(v)
+        v = _clean_sources(v)
+    
+        return [
+            normalize_source(s, settings.max_comment_length)
+            for s in v
+        ]
 
 class SourceRemoveRequest(BaseModelConfig):
     source_ids: Annotated[list[str], Field(..., min_length=1)]

@@ -10,9 +10,8 @@ Provides functions for:
 
 import base64
 import hashlib
-import re
 from typing import Optional, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse, unquote
 
 from src.core.enums import ProxyProtocol
 
@@ -383,3 +382,35 @@ def validate_proxy_config(config: str) -> Tuple[bool, Optional[str]]:
     
     # For protocols without specific validator, just check format
     return True, None
+
+
+def normalize_source(source: str, max_comment_length: int | None = None) -> str:
+    """
+    Приводит source к валидному виду:
+    - декодирует comment (#...)
+    - убирает двойное/тройное encoding
+    - валидирует длину comment
+    """
+
+    # 1. разделяем url и comment
+    if "#" in source:
+        url, comment = source.split("#", 1)
+
+        # 2. многократный decode (фикс %25%25...)
+        prev = None
+        while prev != comment:
+            prev = comment
+            comment = unquote(comment)
+
+        comment = comment.strip()
+
+        # 3. проверка длины
+        if max_comment_length is not None and len(comment) > max_comment_length:
+            raise ValueError(
+                f"comment too long (max {max_comment_length})"
+            )
+
+        # 4. безопасное восстановление
+        return f"{url}#{comment}"
+
+    return source
