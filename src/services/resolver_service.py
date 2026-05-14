@@ -321,6 +321,15 @@ class ResolverService:
         if not token:
             logger.warning(f"Source {source.id} has no internal_token")
             return
+
+        comments = await self.comment_repo.get_all_for_subscription(
+            token
+        )
+        comment_map = {c.config_hash: c.comment for c in comments}
+
+        for key, value in comment_map.items():
+            if not root_comment_map.get(key):
+                root_comment_map[key] = value
         
         # Recursively resolve
         await self._resolve_recursive(
