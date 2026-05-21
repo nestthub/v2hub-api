@@ -7,6 +7,7 @@ from typing import Annotated, List, Optional
 from pydantic import Field, computed_field, field_validator
 
 from src.core.config import settings
+from utils.config_parser import normalize_source
 
 
 
@@ -55,8 +56,18 @@ class SubscriptionCreateRequest(BaseModelConfig):
 
     @field_validator("sources", mode="before")
     @classmethod
-    def clean_sources(cls, v):
-        return _clean_sources(v)
+    def clean_sources(cls, v: list[str]) -> list[str]:
+        v = _clean_sources(v)
+    
+        cleaned = []
+        for s in v:
+            s = normalize_source(s, settings.max_comment_length)
+            cleaned.append(s)
+    
+        if not cleaned:
+            raise ValueError("sources list is empty after deduplication")
+    
+        return cleaned
 
 
 class SubscriptionUpdateRequest(BaseModelConfig):
