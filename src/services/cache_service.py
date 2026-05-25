@@ -389,7 +389,11 @@ async def get_redis_client() -> Optional[redis.Redis]:
             _redis_client = redis.from_url(
                 settings.redis_url_str,
                 encoding="utf-8",
-                decode_responses=False,  # We handle encoding manually
+                decode_responses=False,       # We handle encoding manually
+                socket_timeout=5,             # Таймаут на операцию (сек) — предотвращает вечное ожидание
+                socket_connect_timeout=3,     # Таймаут на установку соединения
+                retry_on_timeout=True,        # Один автоматический ретрай при таймауте
+                health_check_interval=30,     # Проверка живости соединения каждые 30 сек
             )
 
             await _redis_client.ping()

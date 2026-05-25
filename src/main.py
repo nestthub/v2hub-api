@@ -171,8 +171,46 @@ def create_app() -> FastAPI:
     app.include_router(public.router, dependencies=[Depends(check_public_rate_limit)])
 
     @app.get("/health")
-    def health():
-        return {"status": "ok"}
+    async def health():
+        """
+        Проверяет реальное состояние зависимостей.
+        Возвращает 200 только если БД и Redis доступны.
+        503 — если хотя бы одна зависимость недоступна.
+        """
+        from sqlalchemy import text as sa_text
+        from src.db.session import engine
+        from src.services.cache_service import get_redis_client
+
+        checks: dict[str, str] = {}
+        healthy = True
+
+        # Проверка БД
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(sa_text("SELECT 1"))
+            checks["database"] = "ok"
+        except Exception as e:
+            checks["database"] = f"error: {e}"
+            healthy = False
+
+        # Проверка Redis
+        try:
+            redis_client = await get_redis_client()
+            if redis_client:
+                await redis_client.ping()
+                checks["redis"] = "ok"
+            else:
+                checks["redis"] = "unavailable"
+                healthy = False
+        except Exception as e:
+            checks["redis"] = f"error: {e}"
+            healthy = False
+
+        status_code = status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE
+        return JSONResponse(
+            status_code=status_code,
+            content={"status": "ok" if healthy else "degraded", "checks": checks},
+        )
     
     # Register exception handlers
     register_exception_handlers(app)

@@ -21,6 +21,9 @@ from src.services.cache_service import get_redis_client
 
 logger = logging.getLogger(__name__)
 
+# Время (секунды) до следующей попытки переподключения к Redis после сбоя
+_REDIS_RETRY_INTERVAL = 30.0
+
 
 @dataclass
 class RateLimitConfig:
@@ -62,21 +65,39 @@ class RateLimiter:
         self.config = config or RateLimitConfig()
         self._redis = redis
         self._redis_available = True
+        self._redis_unavailable_since: float = 0.0   # timestamp последнего сбоя
         self._whitelist_service: Optional[WhitelistService] = None
     
     async def _get_redis(self) -> Optional[Redis]:
-        """Get Redis client, cache it if not set."""
-        if self._redis is None and self._redis_available:
-            try:
-                self._redis = await get_redis_client()
-                if self._redis is None:
-                    self._redis_available = False
-                    logger.warning(
-                        "Redis not available - rate limiting will fail open"
-                    )
-            except Exception as e:
-                logger.error(f"Failed to get Redis client: {e}")
+        """
+        Возвращает Redis-клиент.
+        
+        Если Redis ранее упал, повторяет попытку не чаще раза в
+        _REDIS_RETRY_INTERVAL секунд — без этого флаг _redis_available
+        оставался бы False навсегда до рестарта процесса.
+        """
+        # Если клиент уже есть — возвращаем сразу
+        if self._redis is not None:
+            return self._redis
+
+        # Если Redis недоступен — проверяем, не истёк ли интервал ожидания
+        if not self._redis_available:
+            if time.monotonic() - self._redis_unavailable_since < _REDIS_RETRY_INTERVAL:
+                return None
+            # Интервал истёк — сбрасываем флаг и пробуем снова
+            logger.info("Retrying Redis connection after backoff...")
+            self._redis_available = True
+
+        try:
+            self._redis = await get_redis_client()
+            if self._redis is None:
                 self._redis_available = False
+                self._redis_unavailable_since = time.monotonic()
+                logger.warning("Redis not available - rate limiting will fail open")
+        except Exception as e:
+            logger.error(f"Failed to get Redis client: {e}")
+            self._redis_available = False
+            self._redis_unavailable_since = time.monotonic()
         
         return self._redis
 
@@ -160,7 +181,11 @@ class RateLimiter:
         
         except Exception as e:
             logger.error(f"Redis rate limit error: {e}")
-            # On error, fail open (allow request)
+            # Сбрасываем клиент, чтобы _get_redis попробовал переподключиться
+            self._redis = None
+            self._redis_available = False
+            self._redis_unavailable_since = time.monotonic()
+            # Fail open (allow request)
             return True, None
     
     async def check_public_limit(self, ip: str) -> Tuple[bool, Optional[str]]:

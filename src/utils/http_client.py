@@ -5,7 +5,6 @@ Features:
 - HTTP/HTTPS only
 - Blocks IP-literal targets in production
 - Blocks localhost / private / link-local / reserved / metadata targets
-- Validates every redirect
 - DNS rebinding detection
 - Response size limit
 - Timeout handling
@@ -27,7 +26,7 @@ from typing import Optional
 
 import aiohttp
 from aiohttp.abc import AbstractResolver
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 from src.core.config import settings
 from src.core.exceptions import ExternalFetchError
@@ -200,12 +199,10 @@ class SubscriptionHTTPClient:
         self,
         timeout: int = settings.fetch_timeout,
         user_agent: str = settings.fetch_user_agent,
-        max_redirects: int = settings.fetch_max_redirects,
         max_bytes: int = getattr(settings, "fetch_max_bytes", 2 * 1024 * 1024),
     ):
         self.timeout = timeout
         self.user_agent = user_agent
-        self.max_redirects = max_redirects
         self.max_bytes = max_bytes
         self._session: Optional[aiohttp.ClientSession] = None
         self._resolver: Optional[_GuardedResolver] = None
@@ -306,18 +303,6 @@ class SubscriptionHTTPClient:
             return
 
         raise ExternalFetchError(url=url, reason=f"Direct IP targets are blocked: {ip}")
-
-    def _validate_redirect_url(self, base_url: str, redirect_url: str) -> str:
-        absolute_url = urljoin(base_url, redirect_url)
-        self._validate_url(absolute_url)
-        self._validate_no_ip_literal_in_url(absolute_url)
-
-        parsed = urlparse(absolute_url)
-        host = parsed.hostname or ""
-        if self._is_blocked_hostname(host):
-            raise ExternalFetchError(url=absolute_url, reason="Blocked redirect hostname")
-
-        return absolute_url
 
     def _validate_content_type(
         self,
@@ -482,16 +467,17 @@ class SubscriptionHTTPClient:
         url: str,
     ) -> tuple[int, str | None, aiohttp.typedefs.LooseHeaders, str]:
         async with session.get(url, allow_redirects=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as response:
-            # Валидация заголовков перед загрузкой тела
-            self._validate_content_type(response.headers, url)
-            self._validate_content_encoding(response.headers, url)
-            
+            # Сначала проверяем статус — редиректы и ошибки не имеют осмысленного тела
             if response.status in {301, 302, 303, 307, 308}:
                 location = response.headers.get("Location")
                 return response.status, location, response.headers, ""
 
             if response.status != 200:
                 return response.status, None, response.headers, ""
+
+            # Валидируем заголовки только для успешных ответов с телом
+            self._validate_content_type(response.headers, url)
+            self._validate_content_encoding(response.headers, url)
 
             total = 0
             chunks: list[bytes] = []
@@ -586,12 +572,13 @@ class SubscriptionHTTPClient:
     
                 return content
     
-            # --- RETRY ONLY NETWORK ---
+            # --- RETRY: сетевые ошибки и разрыв соединения ---
             except (
                 aiohttp.ClientConnectorError,
                 aiohttp.ServerTimeoutError,
                 asyncio.TimeoutError,
                 aiohttp.ClientOSError,
+                aiohttp.ServerDisconnectedError,  # переиспользованное соединение закрыто сервером
             ) as e:
     
                 if attempt == 2:
@@ -600,7 +587,7 @@ class SubscriptionHTTPClient:
                         reason=f"Network error: {type(e).__name__}",
                     ) from e
     
-                delay = 2 ** attempt  # 1s, 2s, 4s
+                delay = 2 ** attempt  # 1s, 2s
                 logger.warning(
                     "Network error on %s (attempt %d): %s. Retrying in %ss",
                     url,

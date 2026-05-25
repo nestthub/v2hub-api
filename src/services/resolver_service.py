@@ -36,6 +36,7 @@ class ResolveResult:
     """Result of subscription resolution."""
     
     configs: List[ResolvedConfig] = field(default_factory=list)
+    seen_hashes: set = field(default_factory=set)   # O(1) dedup вместо O(n) any()
     description: str = settings.domain
     truncated: bool = False  # Hit max_configs limit
     depth_exceeded: bool = False  # Hit max_depth limit
@@ -243,8 +244,9 @@ class ResolverService:
         else:
             full_config = base_config
         
-        # Add to results (deduplicate by hash)
-        if not any(c.hash == config_hash for c in result.configs):
+        # Add to results (deduplicate by hash — O(1) через seen_hashes set)
+        if config_hash not in result.seen_hashes:
+            result.seen_hashes.add(config_hash)
             result.configs.append(
                 ResolvedConfig(
                     hash=config_hash,
@@ -287,8 +289,9 @@ class ResolverService:
                 
                 config_hash = get_config_hash(config)
                 
-                # Deduplicate
-                if not any(c.hash == config_hash for c in result.configs):
+                # Deduplicate — O(1) через seen_hashes set
+                if config_hash not in result.seen_hashes:
+                    result.seen_hashes.add(config_hash)
                     result.configs.append(
                         ResolvedConfig(
                             hash=config_hash,

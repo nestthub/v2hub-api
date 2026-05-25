@@ -7,7 +7,7 @@ from typing import Annotated, List, Optional
 from pydantic import Field, computed_field, field_validator
 
 from src.core.config import settings
-from utils.config_parser import normalize_source
+from src.utils.config_parser import normalize_source
 
 
 
