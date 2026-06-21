@@ -4,11 +4,6 @@
 
 A production-ready FastAPI-based service for managing, aggregating, and serving VPN proxy subscriptions with multi-source support, intelligent caching, and comprehensive security features.
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.136+-green.svg)](https://fastapi.tiangolo.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org)
-[![Redis](https://img.shields.io/badge/Redis-7-red.svg)](https://redis.io)
-
 ---
 
 ## 🌟 Features
@@ -47,6 +42,7 @@ A production-ready FastAPI-based service for managing, aggregating, and serving 
 - [Configuration](#-configuration)
 - [API Documentation](#-api-documentation)
 - [Usage Examples](#-usage-examples)
+- [Monitoring](#-monitoring)
 - [Development](#-development)
 - [Deployment](#-deployment)
 - [Contributing](#-contributing)
@@ -113,7 +109,7 @@ celery -A worker.celery_app beat --loglevel=info
 
 ```
 ┌─────────────┐
-│   Nginx     │  ← Reverse proxy, SSL termination
+│   Nginx     │  ← Reverse proxy, SSL termination, /grafana/ proxy
 └──────┬──────┘
        │
 ┌──────▼──────┐
@@ -127,6 +123,12 @@ celery -A worker.celery_app beat --loglevel=info
 │ PostgreSQL  │   │    Redis    │   │  Celery   │
 │   (Data)    │   │   (Cache)   │   │  Workers  │
 └─────────────┘   └─────────────┘   └───────────┘
+
+┌─────────────────────────────────────────────────┐
+│              Monitoring Stack                   │
+│  Prometheus → Grafana                           │
+│  Docker logs → Alloy → Loki → Grafana           │
+└─────────────────────────────────────────────────┘
 ```
 
 ### Technology Stack
@@ -143,6 +145,9 @@ celery -A worker.celery_app beat --loglevel=info
 | **Migrations**    | Alembic 1.18   | Database schema management           |
 | **Web Server**    | Uvicorn 0.45   | ASGI server                          |
 | **Reverse Proxy** | Nginx 1.27     | Load balancing, SSL                  |
+| **Metrics**       | Prometheus     | Metrics collection and storage       |
+| **Logs**          | Loki + Alloy   | Log aggregation and shipping         |
+| **Dashboards**    | Grafana        | Visualization and alerting           |
 
 ### Project Structure
 
@@ -186,8 +191,16 @@ v2hub-server/
 │   └── tasks/                       # Background tasks
 ├── alembic/
 │   └── versions/                    # Database migrations
+├── monitoring/
+│   ├── alloy/
+│   │   └── config.alloy             # Grafana Alloy log pipeline
+│   ├── grafana/
+│   │   └── datasources.yml          # Auto-provisioned datasources
+│   ├── prometheus.yml               # Scrape config
+│   └── loki.yml                     # Log storage config
 ├── nginx/
-│   └── default.conf                 # Nginx configuration
+│   └── conf.d/
+│       └── api.conf                 # Nginx configuration
 ├── tests/                           # Test suite
 ├── docker-compose.yml               # Docker orchestration
 ├── Dockerfile                       # Container definition
@@ -385,7 +398,6 @@ MAX_NESTING_DEPTH=3
 MAX_SUBSCRIPTIONS_PER_USER=3
 MAX_CONFIGS_PER_SUBSCRIPTION=150
 MAX_SOURCES_PER_SUBSCRIPTION=150
-
 
 # ─────────────────────────────
 # Fetching
@@ -588,6 +600,149 @@ print(f"URL: http://localhost/sub/{sub['token']}")
 
 ---
 
+## 📊 Monitoring
+
+The monitoring stack runs as separate Docker services. All ports are internal — no monitoring service is exposed to the internet directly.
+
+### Stack Overview
+
+| Service    | Image             | Internal port | Description                           |
+| ---------- | ----------------- | ------------- | ------------------------------------- |
+| Prometheus | `prom/prometheus` | 9090          | Scrapes `/metrics` from the API       |
+| Loki       | `grafana/loki`    | 3100          | Log storage, 7-day retention          |
+| Alloy      | `grafana/alloy`   | 12345         | Log collector (successor to Promtail) |
+| Grafana    | `grafana/grafana` | 3000          | Dashboards, exposed via nginx         |
+
+### Accessing Grafana
+
+Grafana is proxied through nginx at `/grafana/` and restricted by IP allowlist:
+
+```
+http://your-server/grafana/
+```
+
+Default credentials are configured via environment variables in `docker-compose.yml`:
+
+```yaml
+GF_SECURITY_ADMIN_USER=admin
+GF_SECURITY_ADMIN_PASSWORD=your_password
+GF_SERVER_ROOT_URL=http://your-server/grafana/
+GF_SERVER_SERVE_FROM_SUB_PATH=true
+```
+
+> Grafana's built-in login screen is used for authentication. The nginx IP allowlist acts as the outer perimeter — unauthorized IPs receive 403 before reaching Grafana at all.
+
+### Setting Up Grafana Basic Auth (Optional)
+
+An additional Basic Auth layer can be added in nginx. It requires a password file inside the nginx container.
+
+**Install `htpasswd`** (if not available):
+
+```bash
+apt install apache2-utils
+```
+
+**Create the password file**:
+
+```bash
+# First time — creates the file
+htpasswd -c ./nginx/grafana.htpasswd admin
+
+# Add or update a user
+htpasswd ./nginx/grafana.htpasswd admin
+```
+
+The file is mounted into nginx as read-only:
+
+```yaml
+volumes:
+  - ./nginx/grafana.htpasswd:/etc/nginx/grafana.htpasswd:ro
+```
+
+> **Warning:** Basic Auth and Grafana's own login conflict over the `Authorization` HTTP header. If you enable Basic Auth, Grafana may redirect to its login page and receive a 403 in return, creating a loop. It is recommended to use the **IP allowlist only** and skip Basic Auth.
+
+### App Metrics
+
+The API exposes Prometheus metrics at `/metrics`. This endpoint is:
+
+- blocked externally via nginx (`deny all`)
+- scraped internally by Prometheus over the Docker network
+
+Metrics exposed:
+
+| Metric                              | Type      | Labels                                         |
+| ----------------------------------- | --------- | ---------------------------------------------- |
+| `fastapi_requests_total`            | Counter   | `method`, `path`, `app_name`                   |
+| `fastapi_responses_total`           | Counter   | `method`, `path`, `status_code`, `app_name`    |
+| `fastapi_requests_duration_seconds` | Histogram | `method`, `path`, `app_name`                   |
+| `fastapi_requests_in_progress`      | Gauge     | `method`, `path`, `app_name`                   |
+| `fastapi_exceptions_total`          | Counter   | `method`, `path`, `exception_type`, `app_name` |
+| `fastapi_app_info`                  | Info      | `app_name`                                     |
+
+### Log Pipeline
+
+Grafana Alloy collects Docker container logs and ships them to Loki:
+
+```
+Docker containers → Alloy (discovery.docker) → Loki → Grafana
+```
+
+Logs are labeled with `container_name` and `compose_service`. Query examples in Grafana Explore:
+
+```logql
+# All services
+{compose_service=~"v2hub_.+"}
+
+# Errors only
+{compose_service=~"v2hub_.+", level="error"}
+
+# API logs only
+{compose_service="v2hub_api"}
+
+# Nginx logs, non-200
+{compose_service="v2hub_nginx"} | status != "200"
+```
+
+### Dashboard
+
+Import dashboard **16110** from [grafana.com/dashboards](https://grafana.com/grafana/dashboards/16110) for a pre-built FastAPI observability view covering request rates, durations, error ratios, and live logs. The `$app_name` variable is auto-populated from the `fastapi_app_info` metric.
+
+### Alloy Pipeline UI
+
+The Alloy UI (port 12345) is not exposed publicly. Access it via SSH tunnel:
+
+```bash
+ssh -L 12345:localhost:12345 user@your-server
+# Then open http://localhost:12345
+```
+
+### Useful Monitoring Commands
+
+```bash
+# Check all monitoring services
+docker compose ps prometheus loki alloy grafana
+
+# Prometheus logs
+docker compose logs -f prometheus
+
+# Loki logs
+docker compose logs -f loki
+
+# Alloy logs
+docker compose logs -f alloy
+
+# Grafana logs
+docker compose logs -f grafana
+
+# Verify nginx can reach Grafana
+docker compose exec nginx wget -q -O- http://grafana:3000/api/health
+
+# Verify Prometheus can reach the API
+docker compose exec prometheus wget -q -O- http://api:8000/metrics | head -20
+```
+
+---
+
 ## 🛠️ Development
 
 ### Running Tests
@@ -664,7 +819,9 @@ pre-commit run --all-files
 - [ ] Setup SSL/TLS certificates in Nginx
 - [ ] Configure proper CORS origins (not `*`)
 - [ ] Set appropriate rate limits for your use case
-- [ ] Setup monitoring and logging
+- [ ] Set `GF_SECURITY_ADMIN_PASSWORD` to a strong password
+- [ ] Restrict `/grafana/` to trusted IPs in nginx
+- [ ] Ensure no monitoring ports (9090, 3100, 12345, 3000) are exposed publicly
 - [ ] Configure backup strategy for PostgreSQL
 - [ ] Setup Redis persistence if needed
 - [ ] Review and adjust resource limits (pool sizes, timeouts)
@@ -691,7 +848,7 @@ services:
   nginx:
     volumes:
       - ./ssl:/etc/nginx/ssl:ro
-      - ./nginx/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/conf.d/api.conf:/etc/nginx/conf.d/default.conf:ro
 ```
 
 ### Nginx SSL Configuration
@@ -713,26 +870,29 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+
+    # Grafana — internal access only
+    location /grafana/ {
+        allow 1.2.3.4;   # your IP
+        deny  all;
+
+        proxy_pass       http://grafana:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_redirect   http://grafana:3000/ /grafana/;
+    }
+
+    # Block metrics endpoint from public
+    location /metrics {
+        deny all;
+    }
 }
 ```
-
-### Monitoring
-
-Recommended monitoring stack:
-
-- **Metrics**: Prometheus + Grafana
-- **Logging**: ELK Stack or Loki
-- **Tracing**: Jaeger or Zipkin
-- **Uptime**: UptimeRobot or similar
-
-Key metrics to monitor:
-
-- API response times
-- Database connection pool usage
-- Redis cache hit rate
-- Celery queue length
-- Error rates per endpoint
-- Rate limit violations
 
 ---
 
@@ -768,6 +928,12 @@ Automatically applied in production:
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `X-XSS-Protection: 1; mode=block`
+
+### Monitoring Security
+
+- All monitoring ports (Prometheus :9090, Loki :3100, Alloy :12345, Grafana :3000) are **internal only** — declared with `expose`, not `ports`
+- `/metrics` endpoint is blocked externally via `deny all` in nginx
+- Grafana access is restricted by IP allowlist in nginx
 
 ---
 
@@ -814,6 +980,10 @@ Built with:
 - [Celery](https://docs.celeryq.dev/) - Distributed task queue
 - [Redis](https://redis.io/) - In-memory data structure store
 - [PostgreSQL](https://www.postgresql.org/) - Relational database
+- [Prometheus](https://prometheus.io/) - Metrics and alerting
+- [Grafana](https://grafana.com/) - Observability dashboards
+- [Loki](https://grafana.com/oss/loki/) - Log aggregation
+- [Grafana Alloy](https://grafana.com/oss/alloy/) - Telemetry collector
 
 ---
 
@@ -825,4 +995,4 @@ Built with:
 
 ---
 
-**Made with ❤️ **
+**Made with ❤️**

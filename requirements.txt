@@ -18,3 +18,7 @@ aiohttp
 # Config / validation
 pydantic
 pydantic-settings
+
+prometheus_client>=0.25.0
+opentelemetry-api>=1.42.1
+opentelemetry-sdk>=1.42.1

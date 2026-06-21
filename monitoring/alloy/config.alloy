@@ -1,0 +1,58 @@
+// ─── 1. Дискавери контейнеров через Docker API ──────────────────────────────
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+
+  refresh_interval = "5s"
+}
+
+// ─── 2. Переименовываем метки в нужный формат ───────────────────────────────
+discovery.relabel "docker_labels" {
+  targets = discovery.docker.containers.targets
+
+  // container_name → убираем слэш в начале (/v2hub_app → v2hub_app)
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container_name"
+  }
+
+  // Для дашборда: compose_service из имени контейнера
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "compose_service"
+  }
+
+  // image_name
+  rule {
+    source_labels = ["__meta_docker_container_image"]
+    target_label  = "image_name"
+  }
+}
+
+// ─── 3. Читаем логи контейнеров ─────────────────────────────────────────────
+loki.source.docker "docker_logs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_labels.output
+  forward_to = [loki.process.pipeline.receiver]
+
+  refresh_interval = "5s"
+}
+
+// ─── 4. Обрабатываем логи ───────────────────────────────────────────────────
+loki.process "pipeline" {
+  forward_to = [loki.write.loki_push.receiver]
+
+  stage.static_labels {
+    values = {
+      job = "docker-logs",
+    }
+  }
+}
+
+// ─── 5. Пишем в Loki ────────────────────────────────────────────────────────
+loki.write "loki_push" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
