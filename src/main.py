@@ -7,32 +7,122 @@ Configures and initializes the VPN Subscription API with:
 - Exception handlers
 - Lifecycle events
 - OpenAPI documentation
+- Prometheus metrics
 """
 
 import logging
+import re
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.responses import Response
+
+from prometheus_client import Counter, Gauge, Histogram, Info, REGISTRY
+from prometheus_client.openmetrics.exposition import (
+    CONTENT_TYPE_LATEST,
+    generate_latest,
+)
 
 from src.api.endpoints import admin, public, subscriptions
 from src.core.config import settings
 from src.core.exceptions import VPNSubscriptionError
 from src.db.session import close_db, init_db
+from src.middlewares.rate_limit_middleware import (
+    check_internal_rate_limit,
+    check_public_rate_limit,
+    setup_rate_limiting,
+)
+from src.middlewares.security_headers_middleware import SecurityHeadersMiddleware
 from src.services.cache_service import close_redis_client, get_redis_client
 from src.utils.http_client import close_http_client
 
-from src.middlewares.rate_limit_middleware import setup_rate_limiting, check_internal_rate_limit, check_public_rate_limit
-from src.middlewares.security_headers_middleware import SecurityHeadersMiddleware
+# ─── Logging ─────────────────────────────────────────────────────────────────
 
-# Configure logging
 logging.basicConfig(
     level=settings.log_level,
     format=settings.log_format,
 )
-
 logger = logging.getLogger(__name__)
+
+
+# ─── Prometheus metrics ───────────────────────────────────────────────────────
+
+APP_NAME = "v2hub"
+
+APP_INFO = Gauge(
+    "fastapi_app_info",
+    "FastAPI application info",
+    ["app_name", "version"],
+)
+APP_INFO.labels(app_name=APP_NAME, version="1.0.0").set(1)
+
+HTTP_REQUESTS_TOTAL = Counter(
+    "fastapi_requests_total",
+    "Total HTTP requests",
+    ["method", "path", "app_name"],
+)
+
+HTTP_RESPONSES_TOTAL = Counter(
+    "fastapi_responses_total",
+    "Total HTTP responses by status code",
+    ["method", "path", "status_code", "app_name"],
+)
+
+HTTP_REQUEST_DURATION = Histogram(
+    "fastapi_requests_duration_seconds",
+    "HTTP request duration in seconds",
+    ["method", "path", "app_name"],
+    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
+)
+
+HTTP_REQUESTS_IN_PROGRESS = Gauge(
+    "fastapi_requests_in_progress",
+    "HTTP requests currently in progress",
+    ["method", "path", "app_name"],
+)
+
+HTTP_EXCEPTIONS_TOTAL = Counter(
+    "fastapi_exceptions_total",
+    "Total HTTP exceptions",
+    ["method", "path", "exception_type", "app_name"],
+)
+
+
+# ─── Path normalization ───────────────────────────────────────────────────────
+
+# Порядок важен — более специфичные паттерны первыми
+PATH_PATTERNS = [
+    (re.compile(r"^/sub/[^/]+$"),                         "/sub/{token}"),
+    (re.compile(r"^/api/v1/subs/[^/]+/sources$"),         "/api/v1/subs/{token}/sources"),
+    (re.compile(r"^/api/v1/subs/[^/]+/comments$"),        "/api/v1/subs/{token}/comments"),
+    (re.compile(r"^/api/v1/subs/[^/]+/refresh$"),         "/api/v1/subs/{token}/refresh"),
+    (re.compile(r"^/api/v1/subs/[^/]+$"),                 "/api/v1/subs/{token}"),
+    (re.compile(r"^/api/v1/admin/users/[^/]+/(.+)$"),     r"/api/v1/admin/users/{id}/\1"),
+    (re.compile(r"^/api/v1/admin/users/[^/]+$"),          "/api/v1/admin/users/{id}"),
+]
+
+# Мусорные пути от ботов и сканеров — не трекаем
+IGNORED_PATHS = re.compile(
+    r"^(/wp-admin|/wp-login|/\.env|/\.git|/phpmyadmin|/admin\.php"
+    r"|/xmlrpc\.php|/cgi-bin|/actuator|/boaform|/shell"
+    r"|.*\.(php|asp|aspx|jsp|cgi|bak|sql|tar|gz)$)"
+)
+
+
+def normalize_path(path: str) -> str | None:
+    """
+    Нормализует путь для использования в метриках.
+    Возвращает None если путь нужно игнорировать (боты, сканеры).
+    """
+    if IGNORED_PATHS.match(path):
+        return None
+    for pattern, replacement in PATH_PATTERNS:
+        if pattern.match(path):
+            return pattern.sub(replacement, path)
+    return path
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -41,23 +131,17 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Application lifespan handler.
-    
-    Manages startup and shutdown events.
-    """
-    # Startup
+    """Application lifespan handler. Manages startup and shutdown events."""
+
     logger.info("Starting VPN Subscription API...")
-    
-    # Initialize database connection
+
     try:
         await init_db()
         logger.info("Database connection established")
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
         raise
-    
-    # Initialize Redis connection
+
     try:
         redis_client = await get_redis_client()
         if redis_client:
@@ -66,8 +150,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Redis not available, caching will be degraded")
     except Exception as e:
         logger.warning(f"Redis initialization failed: {e}")
-    
-    # Setup rate limiting
+
     try:
         await setup_rate_limiting(
             app,
@@ -78,35 +161,31 @@ async def lifespan(app: FastAPI):
         logger.info("Rate limiting configured")
     except Exception as e:
         logger.warning(f"Rate limiting setup failed: {e}")
-    
+
     logger.info("Application started successfully")
-    
+
     yield
-    
-    # Shutdown
+
     logger.info("Shutting down VPN Subscription API...")
-    
-    # Close Redis connection
+
     try:
         await close_redis_client()
         logger.info("Redis connection closed")
     except Exception as e:
         logger.error(f"Error closing Redis: {e}")
-    
-    # Close HTTP client
+
     try:
         await close_http_client()
         logger.info("HTTP client closed")
     except Exception as e:
         logger.error(f"Error closing HTTP client: {e}")
-    
-    # Close database connection
+
     try:
         await close_db()
         logger.info("Database connection closed")
     except Exception as e:
         logger.error(f"Error closing database: {e}")
-    
+
     logger.info("Application shutdown complete")
 
 
@@ -115,29 +194,25 @@ async def lifespan(app: FastAPI):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def create_app() -> FastAPI:
-    """
-    Create and configure FastAPI application.
-    
-    Returns:
-        Configured FastAPI application
-    """
+    """Create and configure FastAPI application."""
+
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         description="""
         VPN Subscription API - Manage and aggregate VPN proxy subscriptions
-        
+
         ## Features
-        
+
         * **Subscription Management**: Create, update, delete subscriptions
         * **Source Aggregation**: Combine configs, external URLs, and internal refs
         * **Comment System**: Per-subscription config comments
         * **Recursive Resolution**: Resolve nested subscription references
         * **Two-Tier Caching**: Redis + PostgreSQL for external URLs
         * **Circular Reference Detection**: Prevent infinite loops
-        
+
         ## Authentication
-        
+
         Most endpoints require authentication via `API-Token` header.
         Public endpoints (`/sub/{token}`) are accessible without authentication.
         """,
@@ -146,15 +221,13 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if settings.debug else None,
         lifespan=lifespan,
     )
-    
-    # Add security headers middleware
+
     app.add_middleware(
         SecurityHeadersMiddleware,
-        hsts_enabled=not settings.debug,  # Disable HSTS in debug mode
+        hsts_enabled=not settings.debug,
         csp_enabled=not settings.debug,
     )
-    
-    # Configure CORS
+
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -164,10 +237,12 @@ def create_app() -> FastAPI:
             allow_headers=settings.cors_headers,
         )
 
-    
-    # Include routers
-    app.include_router(admin.router, prefix="/api/v1")  # Admin endpoints (with signature verification)
-    app.include_router(subscriptions.router, prefix="/api/v1", dependencies=[Depends(check_internal_rate_limit)])
+    app.include_router(admin.router, prefix="/api/v1")
+    app.include_router(
+        subscriptions.router,
+        prefix="/api/v1",
+        dependencies=[Depends(check_internal_rate_limit)],
+    )
     app.include_router(public.router, dependencies=[Depends(check_public_rate_limit)])
 
     @app.get("/health")
@@ -179,12 +254,10 @@ def create_app() -> FastAPI:
         """
         from sqlalchemy import text as sa_text
         from src.db.session import engine
-        from src.services.cache_service import get_redis_client
 
         checks: dict[str, str] = {}
         healthy = True
 
-        # Проверка БД
         try:
             async with engine.connect() as conn:
                 await conn.execute(sa_text("SELECT 1"))
@@ -193,7 +266,6 @@ def create_app() -> FastAPI:
             checks["database"] = f"error: {e}"
             healthy = False
 
-        # Проверка Redis
         try:
             redis_client = await get_redis_client()
             if redis_client:
@@ -211,10 +283,9 @@ def create_app() -> FastAPI:
             status_code=status_code,
             content={"status": "ok" if healthy else "degraded", "checks": checks},
         )
-    
-    # Register exception handlers
+
     register_exception_handlers(app)
-    
+
     return app
 
 
@@ -224,30 +295,19 @@ def create_app() -> FastAPI:
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Register global exception handlers."""
-    
+
     @app.exception_handler(VPNSubscriptionError)
-    async def vpn_subscription_error_handler(
-        request: Request,
-        exc: VPNSubscriptionError,
-    ):
-        """Handle application-specific exceptions."""
+    async def vpn_subscription_error_handler(request: Request, exc: VPNSubscriptionError):
         from src.core.exceptions import to_http_exception
-        
         http_exc = to_http_exception(exc)
-        
         return JSONResponse(
             status_code=http_exc.status_code,
             content=http_exc.detail,
         )
-    
+
     @app.exception_handler(Exception)
-    async def general_exception_handler(
-        request: Request,
-        exc: Exception,
-    ):
-        """Handle unexpected exceptions."""
+    async def general_exception_handler(request: Request, exc: Exception):
         logger.exception(f"Unhandled exception: {exc}")
-        
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -266,10 +326,12 @@ app = create_app()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Health Check Endpoint
+# Scalar docs (debug only)
 # ═══════════════════════════════════════════════════════════════════════════
+
 if settings.debug:
     from scalar_fastapi import get_scalar_api_reference, Theme
+
     @app.get("/docs", include_in_schema=False)
     async def scalar_docs():
         return get_scalar_api_reference(
@@ -287,66 +349,9 @@ if settings.debug:
         )
 
 
-from starlette.responses import Response
-from prometheus_client import (
-    Counter, Histogram, Gauge, Info, REGISTRY
-)
-from prometheus_client.openmetrics.exposition import (
-    generate_latest,
-    CONTENT_TYPE_LATEST,
-)
-import time
-
-APP_NAME = "v2hub_api"
-
-# ─── Метрики ────────────────────────────────────────────────────────────────
-
-# Инфо-метрика: нужна для переменной $app_name в дашборде
-APP_INFO = Info(
-    "fastapi_app",
-    "FastAPI application info",
-    ["app_name"],
-)
-APP_INFO.labels(app_name=APP_NAME).info({"version": "1.0.0"})
-
-# Счётчик запросов
-HTTP_REQUESTS_TOTAL = Counter(
-    "fastapi_requests_total",
-    "Total HTTP requests",
-    ["method", "path", "app_name"],
-)
-
-# Счётчик ответов (с status_code — для панелей 2xx/5xx)
-HTTP_RESPONSES_TOTAL = Counter(
-    "fastapi_responses_total",
-    "Total HTTP responses by status code",
-    ["method", "path", "status_code", "app_name"],
-)
-
-# Гистограмма длительности
-HTTP_REQUEST_DURATION = Histogram(
-    "fastapi_requests_duration_seconds",
-    "HTTP request duration in seconds",
-    ["method", "path", "app_name"],
-    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
-)
-
-# Текущие запросы в обработке
-HTTP_REQUESTS_IN_PROGRESS = Gauge(
-    "fastapi_requests_in_progress",
-    "HTTP requests currently in progress",
-    ["method", "path", "app_name"],
-)
-
-# Счётчик исключений
-HTTP_EXCEPTIONS_TOTAL = Counter(
-    "fastapi_exceptions_total",
-    "Total HTTP exceptions",
-    ["method", "path", "exception_type", "app_name"],
-)
-
-
-# ─── Middleware ──────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# Prometheus middleware
+# ═══════════════════════════════════════════════════════════════════════════
 
 @app.middleware("http")
 async def prometheus_middleware(request: Request, call_next):
@@ -356,8 +361,14 @@ async def prometheus_middleware(request: Request, call_next):
     if path == "/metrics":
         return await call_next(request)
 
+    normalized = normalize_path(path)
+
+    # Мусорные пути от ботов — пропускаем без трекинга
+    if normalized is None:
+        return await call_next(request)
+
     HTTP_REQUESTS_IN_PROGRESS.labels(
-        method=method, path=path, app_name=APP_NAME
+        method=method, path=normalized, app_name=APP_NAME
     ).inc()
 
     start = time.perf_counter()
@@ -368,7 +379,7 @@ async def prometheus_middleware(request: Request, call_next):
     except Exception as e:
         HTTP_EXCEPTIONS_TOTAL.labels(
             method=method,
-            path=path,
+            path=normalized,
             exception_type=type(e).__name__,
             app_name=APP_NAME,
         ).inc()
@@ -377,28 +388,30 @@ async def prometheus_middleware(request: Request, call_next):
         duration = time.perf_counter() - start
 
         HTTP_REQUESTS_TOTAL.labels(
-            method=method, path=path, app_name=APP_NAME
+            method=method, path=normalized, app_name=APP_NAME
         ).inc()
 
         HTTP_RESPONSES_TOTAL.labels(
             method=method,
-            path=path,
+            path=normalized,
             status_code=str(status_code),
             app_name=APP_NAME,
         ).inc()
 
         HTTP_REQUEST_DURATION.labels(
-            method=method, path=path, app_name=APP_NAME
+            method=method, path=normalized, app_name=APP_NAME
         ).observe(duration)
 
         HTTP_REQUESTS_IN_PROGRESS.labels(
-            method=method, path=path, app_name=APP_NAME
+            method=method, path=normalized, app_name=APP_NAME
         ).dec()
 
     return response
 
 
-# ─── /metrics ────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# Metrics endpoint
+# ═══════════════════════════════════════════════════════════════════════════
 
 @app.get("/metrics")
 def metrics():
@@ -408,9 +421,13 @@ def metrics():
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Entrypoint
+# ═══════════════════════════════════════════════════════════════════════════
+
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "main:app",
         host=settings.host,
