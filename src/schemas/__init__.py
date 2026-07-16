@@ -1,13 +1,13 @@
 from .base_models import (
-    BaseModel, _clean_sources,
+    BaseModelConfig,
 
-    SourceAddRequest, SourceOut, SourceRemoveRequest,
-    SourceReplaceRequest,
+    SourcesAddRequest, SourceOut, SourcesRemoveRequest,
+    SourcesReplaceRequest,
 
     SubscriptionCreateRequest, SubscriptionListItem, SubscriptionResponse,
     SubscriptionUpdateRequest, RefreshSubscriptionResponse,
 
-    CommentUpdateRequest, ResolvedConfig, UpsertUserRequest,
+    ResolvedConfig, UpsertUserRequest, SourceCreateRequest, SourceUpdateRequest
 )
 
 from .admin_models import (

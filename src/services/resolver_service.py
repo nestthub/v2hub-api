@@ -191,6 +191,10 @@ class ResolverService:
         current_subscription_token: str,
     ) -> None:
         """Process a single source based on its type."""
+
+        # Check current depth limit for the source
+        if source.max_depth < depth:
+            return
         
         if source.source_type == SourceType.CONFIG.value:
             await self._process_config_source(
@@ -251,6 +255,8 @@ class ResolverService:
                 ResolvedConfig(
                     hash=config_hash,
                     config=full_config,
+                    is_hidden=source.is_hidden,
+                    max_depth=source.max_depth,
                 )
             )
     
@@ -296,6 +302,8 @@ class ResolverService:
                         ResolvedConfig(
                             hash=config_hash,
                             config=config,
+                            is_hidden=source.is_hidden,
+                            max_depth=source.max_depth,
                         )
                     )
             

@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
-from prometheus_client import Counter, Gauge, Histogram, Info, REGISTRY
+from prometheus_client import Counter, Gauge, Histogram, REGISTRY
 from prometheus_client.openmetrics.exposition import (
     CONTENT_TYPE_LATEST,
     generate_latest,

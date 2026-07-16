@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from sqlalchemy import (
+    Boolean,
     ForeignKey,
     Index,
     Integer,
@@ -74,6 +75,22 @@ class Source(TimestampMixin, Base):
         Text,
         nullable=True,
         comment="URL for EXTERNAL_URL"
+    )
+
+    is_hidden: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="Whether the source is hidden from end users"
+    )
+
+    max_depth: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=3,
+        server_default="3",
+        comment="Maximum nesting depth for source visibility propagation (0-3)"
     )
     
     order_index: Mapped[int] = mapped_column(

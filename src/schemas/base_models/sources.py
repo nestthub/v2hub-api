@@ -1,4 +1,4 @@
-from .base import BaseModelConfig, _clean_sources
+from .base import BaseModelConfig
 
 from datetime import datetime
 from typing import Annotated
@@ -7,7 +7,7 @@ from pydantic import Field, field_validator
 
 from src.core.config import settings
 from src.core.enums import SourceType
-from src.utils.config_parser import normalize_source
+from src.utils.config_parser import _clean_sources, _normalize_sources
 
 
 
@@ -24,58 +24,95 @@ class SourceOut(BaseModelConfig):
     source_type: Annotated[SourceType, Field(description="Type of source")]
     data: Annotated[str, Field(description="Source data (config, URL, or token)", min_length=1)]
     order_index: Annotated[int, Field(description="Display order", ge=0)]
+
+    is_hidden: Annotated[bool, Field(
+            description="Whether the source is hidden from end users",
+            default=False),
+    ]
+
+    max_depth: Annotated[int, Field(
+            description="Maximum nesting depth for source visibility propagation (0-3)",
+            ge=0,le=settings.max_nesting_depth,default=settings.max_nesting_depth),]
+
     created_at: Annotated[datetime, Field(description="Creation timestamp")]
     updated_at: Annotated[datetime, Field(description="Last update timestamp")]
 
 
+class SourceCreateRequest(BaseModelConfig):
+    data: str
+
+    is_hidden: bool = False
+
+    max_depth: Annotated[
+        int,
+        Field(ge=0, le=settings.max_nesting_depth),
+    ] = settings.max_nesting_depth
 
 
 
-class SourceAddRequest(BaseModelConfig):
+
+class SourcesAddRequest(BaseModelConfig):
     sources: Annotated[
-        list[str],
+        list[SourceCreateRequest],
         Field(..., min_length=1, max_length=settings.max_sources_per_subscription),
     ]
 
     @field_validator("sources", mode="before")
     @classmethod
-    def clean_sources(cls, v: list[str]) -> list[str]:
-        v = _clean_sources(v)
-    
-        cleaned = []
-        for s in v:
-            s = normalize_source(s, settings.max_comment_length)
-            cleaned.append(s)
-    
+    def clean_sources(cls, values):
+        cleaned = _normalize_sources(values)
+
         if not cleaned:
             raise ValueError("sources list is empty after deduplication")
-    
+
         return cleaned
 
 
-class SourceReplaceRequest(BaseModelConfig):
+class SourcesReplaceRequest(BaseModelConfig):
     sources: Annotated[
-        list[str],
+        list[SourceCreateRequest],
         Field(default_factory=list, max_length=settings.max_sources_per_subscription),
     ]
 
     @field_validator("sources", mode="before")
     @classmethod
-    def clean_sources(cls, v: list[str]) -> list[str]:
-        v = _clean_sources(v)
-    
-        return [
-            normalize_source(s, settings.max_comment_length)
-            for s in v
-        ]
+    def clean_sources(cls, values):
+        return _normalize_sources(values)
 
-class SourceRemoveRequest(BaseModelConfig):
+class SourcesRemoveRequest(BaseModelConfig):
     source_ids: Annotated[list[str], Field(..., min_length=1)]
 
     @field_validator("source_ids", mode="before")
     @classmethod
     def clean_ids(cls, v: list[str]) -> list[str]:
-        cleaned = [s.strip() for s in v if s and s.strip()]
+        cleaned = _clean_sources(v)
         if not cleaned:
             raise ValueError("source_ids is empty")
         return cleaned
+
+
+
+class SourceUpdateRequest(BaseModelConfig):
+    """Request to update config settings."""
+
+    config_id: Annotated[str, Field(description="Config id", min_length=1)]
+
+    comment: Annotated[
+        str | None,
+        Field(None, description="Comment text", max_length=256),
+    ]
+
+    is_hidden: Annotated[
+        bool | None,
+        Field(None, description="Whether the source is hidden from end users"),
+    ]
+
+    max_depth: Annotated[
+        int | None,
+        Field(
+            None,
+            description="Maximum nesting depth for source visibility propagation (0-3)",
+            ge=0,
+            le=settings.max_nesting_depth,
+        ),
+    ]

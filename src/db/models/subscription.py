@@ -48,7 +48,6 @@ class Subscription(TimestampMixin, Base):
         String(255),
         ForeignKey("users.user_hash", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     description: Mapped[Optional[str]] = mapped_column(
         String(64),

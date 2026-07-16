@@ -12,6 +12,7 @@ A production-ready FastAPI-based service for managing, aggregating, and serving 
 
 - **Multi-Source Aggregation**: Combine proxy configs from direct URIs, external subscription URLs, and internal references
 - **Per-Subscription Comments**: Add custom comments to individual configs within each subscription
+- **Per-Source Visibility & Nesting Control**: Hide individual sources from resolved output and limit how deep internal references are followed (`is_hidden`, `max_depth`)
 - **Recursive Resolution**: Automatically resolve nested subscription references with circular detection
 - **Two-Tier Caching**: Redis + PostgreSQL for optimal performance and reliability
 - **Background Refresh**: Celery workers automatically update external sources every 15 minutes
@@ -461,7 +462,8 @@ Comprehensive API documentation is available in [API_DOCUMENTATION.md](./API_DOC
 - `POST /api/v1/subs/{token}/sources` - Add sources
 - `PUT /api/v1/subs/{token}/sources` - Replace sources
 - `DELETE /api/v1/subs/{token}/sources` - Remove sources
-- `PATCH /api/v1/subs/{token}/comments` - Update config comment
+- `PATCH /api/v1/subs/{token}/config` - Update config (comment, `is_hidden`, `max_depth`)
+- `PATCH /api/v1/subs/{token}/comments` - Update config comment _(deprecated, use `/config` above)_
 - `POST /api/v1/subs/{token}/refresh` - Refresh external sources
 
 #### Admin Endpoints (require signature + IP whitelist)

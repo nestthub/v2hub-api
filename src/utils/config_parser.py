@@ -14,6 +14,7 @@ from typing import Optional, Tuple
 from urllib.parse import urlparse, unquote
 
 from src.core.enums import ProxyProtocol
+from src.core.config import settings
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -383,6 +384,19 @@ def validate_proxy_config(config: str) -> Tuple[bool, Optional[str]]:
     # For protocols without specific validator, just check format
     return True, None
 
+# ─────────────────────────────────────────────────────────
+# Utils
+# ─────────────────────────────────────────────────────────
+
+def _clean_sources(items: list[str]) -> list[str]:
+    cleaned, seen = [], set()
+    for item in items:
+        v = item.strip()
+        if v and v not in seen:
+            seen.add(v)
+            cleaned.append(v)
+    return cleaned
+
 
 def normalize_source(source: str, max_comment_length: int | None = None) -> str:
     """
@@ -414,3 +428,29 @@ def normalize_source(source: str, max_comment_length: int | None = None) -> str:
         return f"{url}#{comment}"
 
     return source
+
+def _normalize_sources(values):
+    cleaned = []
+    seen = set()
+
+    for item in values:
+        if isinstance(item, str):
+            key = item.strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            cleaned.append({
+                "data": normalize_source(key, settings.max_comment_length),
+            })
+        elif isinstance(item, dict):
+            key = (item.get("data") or "").strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            item = item.copy()
+            item["data"] = normalize_source(key, settings.max_comment_length)
+            cleaned.append(item)
+        else:
+            raise TypeError("Each source must be either a string or an object")
+
+    return cleaned

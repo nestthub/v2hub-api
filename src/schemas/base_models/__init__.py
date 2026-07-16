@@ -1,8 +1,8 @@
-from .base import BaseModel, _clean_sources
+from .base import BaseModelConfig
 
 from .sources import (
-    SourceAddRequest, SourceOut, SourceRemoveRequest,
-    SourceReplaceRequest
+    SourcesAddRequest, SourceOut, SourcesRemoveRequest,
+    SourcesReplaceRequest, SourceUpdateRequest, SourceCreateRequest
 )
 
 from .subscriptions import (

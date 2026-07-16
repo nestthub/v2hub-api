@@ -51,15 +51,18 @@ Create a new subscription.
 class SubscriptionCreateRequest(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=64)]
     description: Annotated[str, Field(max_length=64)] | None = None
-    sources: Annotated[list[str], Field(max_length=150)] = []
+    sources: Annotated[list[SourceCreateRequest], Field(max_length=150)] = []
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints | Description |
-|-------|------|----------|-------------|-------------|
-| `name` | `string` | Yes | 1-64 chars | Subscription name (unique per user) |
-| `description` | `string` | No | Max 64 chars | Optional description |
-| `sources` | `array[string]` | No | Max 150 items | Initial sources (configs, URLs, tokens) |
+
+| Field         | Type                         | Required | Constraints   | Description                             |
+| ------------- | ---------------------------- | -------- | ------------- | --------------------------------------- |
+| `name`        | `string`                     | Yes      | 1-64 chars    | Subscription name (unique per user)     |
+| `description` | `string`                     | No       | Max 64 chars  | Optional description                    |
+| `sources`     | `array[SourceCreateRequest]` | No       | Max 150 items | Initial sources (configs, URLs, tokens) |
+
+Each item can be a plain string (shorthand) or a `SourceCreateRequest` object when you need to set `is_hidden` / `max_depth` at creation time.
 
 **Example**:
 
@@ -69,7 +72,12 @@ class SubscriptionCreateRequest(BaseModel):
   "description": "Personal servers",
   "sources": [
     "vless://uuid@server:port#Server1",
-    "https://provider.com/subscription"
+    "https://provider.com/subscription",
+    {
+      "data": "vless://uuid2@server2:port#Server2",
+      "is_hidden": true,
+      "max_depth": 1
+    }
   ]
 }
 ```
@@ -77,7 +85,7 @@ class SubscriptionCreateRequest(BaseModel):
 **Validation**:
 
 - Name must be unique per user
-- Sources are automatically cleaned and deduplicated
+- Sources are automatically cleaned and deduplicated (by `data`)
 - Invalid sources are rejected with validation error
 
 ---
@@ -99,10 +107,11 @@ class SubscriptionUpdateRequest(BaseModel):
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `name` | `string` | No* | 1-64 chars |
-| `description` | `string` | No* | Max 64 chars |
+
+| Field         | Type     | Required | Constraints  |
+| ------------- | -------- | -------- | ------------ |
+| `name`        | `string` | No*      | 1-64 chars   |
+| `description` | `string` | No*      | Max 64 chars |
 
 \*At least one field must be provided.
 
@@ -116,19 +125,51 @@ class SubscriptionUpdateRequest(BaseModel):
 
 ---
 
-### SourceAddRequest
+### SourceCreateRequest
+
+Object form for a source, used inside `sources` arrays of `SubscriptionCreateRequest`, `SourcesAddRequest`, and `SourcesReplaceRequest`. A plain string is also accepted as shorthand (equivalent to `{"data": "<string>"}`).
+
+```python
+class SourceCreateRequest(BaseModel):
+    data: str
+    is_hidden: bool = False
+    max_depth: Annotated[int, Field(ge=0, le=3)] = 3
+```
+
+**Fields**:
+
+| Field       | Type      | Required | Constraints | Description                                                      |
+| ----------- | --------- | -------- | ----------- | ---------------------------------------------------------------- |
+| `data`      | `string`  | Yes      | Non-empty   | Source data (config URI, URL, or internal token)                 |
+| `is_hidden` | `boolean` | No       | -           | If true, this source's configs are omitted from resolved output  |
+| `max_depth` | `integer` | No       | 0-3         | Max recursion depth for resolving nested subscription references |
+
+**Example**:
+
+```json
+{
+  "data": "https://provider.com/subscription",
+  "is_hidden": false,
+  "max_depth": 2
+}
+```
+
+---
+
+### SourcesAddRequest
 
 Add sources to a subscription.
 
 ```python
-class SourceAddRequest(BaseModel):
-    sources: Annotated[list[str], Field(min_length=1, max_length=150)]
+class SourcesAddRequest(BaseModel):
+    sources: Annotated[list[SourceCreateRequest], Field(min_length=1, max_length=150)]
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `sources` | `array[string]` | Yes | 1-150 items |
+
+| Field     | Type                                   | Required | Constraints |
+| --------- | -------------------------------------- | -------- | ----------- |
+| `sources` | `array[string \| SourceCreateRequest]` | Yes      | 1-150 items |
 
 **Example**:
 
@@ -136,31 +177,33 @@ class SourceAddRequest(BaseModel):
 {
   "sources": [
     "vless://uuid@server:port#NewServer",
-    "https://new-provider.com/sub"
+    { "data": "https://new-provider.com/sub", "is_hidden": true }
   ]
 }
 ```
 
 **Notes**:
 
-- Duplicates are automatically filtered
+- Duplicates are automatically filtered (by `data`)
 - Each source is validated and classified (CONFIG, EXTERNAL_URL, or INTERNAL_TOKEN)
+- String items are shorthand for `{"data": "<string>"}` with default `is_hidden`/`max_depth`
 
 ---
 
-### SourceReplaceRequest
+### SourcesReplaceRequest
 
 Replace all sources atomically.
 
 ```python
-class SourceReplaceRequest(BaseModel):
-    sources: Annotated[list[str], Field(max_length=150)]
+class SourcesReplaceRequest(BaseModel):
+    sources: Annotated[list[SourceCreateRequest], Field(max_length=150)]
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `sources` | `array[string]` | Yes | Max 150 items, can be empty |
+
+| Field     | Type                                   | Required | Constraints                 |
+| --------- | -------------------------------------- | -------- | --------------------------- |
+| `sources` | `array[string \| SourceCreateRequest]` | Yes      | Max 150 items, can be empty |
 
 **Example**:
 
@@ -168,7 +211,11 @@ class SourceReplaceRequest(BaseModel):
 {
   "sources": [
     "vless://uuid@server1:port#Server1",
-    "vless://uuid@server2:port#Server2"
+    {
+      "data": "vless://uuid@server2:port#Server2",
+      "is_hidden": true,
+      "max_depth": 0
+    }
   ]
 }
 ```
@@ -180,19 +227,20 @@ class SourceReplaceRequest(BaseModel):
 
 ---
 
-### SourceRemoveRequest
+### SourcesRemoveRequest
 
 Remove specific sources by ID.
 
 ```python
-class SourceRemoveRequest(BaseModel):
+class SourcesRemoveRequest(BaseModel):
     source_ids: Annotated[list[str], Field(min_length=1)]
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `source_ids` | `array[string]` | Yes | Min 1 item |
+
+| Field        | Type            | Required | Constraints |
+| ------------ | --------------- | -------- | ----------- |
+| `source_ids` | `array[string]` | Yes      | Min 1 item  |
 
 **Example**:
 
@@ -209,36 +257,46 @@ class SourceRemoveRequest(BaseModel):
 
 ---
 
-### CommentUpdateRequest
+### SourceUpdateRequest
 
-Update comment for a config.
+Partially update settings for a specific config source within a subscription. Used by both `PATCH /{token}/comments` (comment-only, sets `comment`) and `PATCH /{token}/config` (general update).
 
 ```python
-class CommentUpdateRequest(BaseModel):
+class SourceUpdateRequest(BaseModel):
     config_id: Annotated[str, Field(min_length=1)]
     comment: Annotated[str, Field(max_length=256)] | None = None
+    is_hidden: bool | None = None
+    max_depth: Annotated[int, Field(ge=0, le=3)] | None = None
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `config_id` | `string` | Yes | Min 1 char |
-| `comment` | `string` | No | Max 256 chars |
+
+| Field       | Type      | Required | Constraints   | Description                                         |
+| ----------- | --------- | -------- | ------------- | --------------------------------------------------- |
+| `config_id` | `string`  | Yes      | Min 1 char    | Hash of the config to update                        |
+| `comment`   | `string`  | No       | Max 256 chars | Comment text (without `#` prefix)                   |
+| `is_hidden` | `boolean` | No       | -             | Whether the source is hidden from end users         |
+| `max_depth` | `integer` | No       | 0-3           | Max nesting depth for source visibility propagation |
+
+Only fields explicitly provided in the request are modified; omitted fields are left unchanged.
 
 **Example**:
 
 ```json
 {
   "config_id": "abc123def456",
-  "comment": "Fast US Server - Los Angeles"
+  "comment": "Fast US Server - Los Angeles",
+  "is_hidden": false,
+  "max_depth": 2
 }
 ```
 
 **Notes**:
 
-- If comment is null/empty, uses domain name as default
+- If `comment` is provided as null/empty on the `/comments` endpoint, uses domain name as default
 - Same config can have different comments in different subscriptions
 - Comment is appended to config using `#` when resolving
+- `CommentUpdateRequest` is deprecated in favor of this model, but is kept for backward compatibility
 
 ---
 
@@ -252,9 +310,10 @@ class UpsertUserRequest(BaseModel):
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `user_id` | `integer` | Yes | > 0 |
+
+| Field     | Type      | Required | Constraints |
+| --------- | --------- | -------- | ----------- |
+| `user_id` | `integer` | Yes      | > 0         |
 
 ---
 
@@ -270,19 +329,24 @@ class SourceOut(BaseModel):
     source_type: SourceType
     data: str
     order_index: int
+    is_hidden: bool = False
+    max_depth: int = 3
     created_at: datetime
     updated_at: datetime
 ```
 
 **Fields**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `string` | Source hash (unique identifier) |
-| `source_type` | `enum` | Type: CONFIG, EXTERNAL_URL, or INTERNAL_TOKEN |
-| `data` | `string` | Full source data (config URI, URL, or token reference) |
-| `order_index` | `integer` | Display order (0-indexed) |
-| `created_at` | `datetime` | ISO 8601 creation timestamp |
-| `updated_at` | `datetime` | ISO 8601 last update timestamp |
+
+| Field         | Type       | Description                                               |
+| ------------- | ---------- | --------------------------------------------------------- |
+| `id`          | `string`   | Source hash (unique identifier)                           |
+| `source_type` | `enum`     | Type: CONFIG, EXTERNAL_URL, or INTERNAL_TOKEN             |
+| `data`        | `string`   | Full source data (config URI, URL, or token reference)    |
+| `order_index` | `integer`  | Display order (0-indexed)                                 |
+| `is_hidden`   | `boolean`  | Whether the source is hidden from end users               |
+| `max_depth`   | `integer`  | Max nesting depth for source visibility propagation (0-3) |
+| `created_at`  | `datetime` | ISO 8601 creation timestamp                               |
+| `updated_at`  | `datetime` | ISO 8601 last update timestamp                            |
 
 **Example**:
 
@@ -292,6 +356,8 @@ class SourceOut(BaseModel):
   "source_type": "config",
   "data": "vless://uuid@server:port?encryption=none#Server1",
   "order_index": 0,
+  "is_hidden": false,
+  "max_depth": 3,
   "created_at": "2026-04-27T10:00:00Z",
   "updated_at": "2026-04-27T10:00:00Z"
 }
@@ -314,14 +380,15 @@ class SubscriptionListItem(BaseModel):
 ```
 
 **Fields**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `token` | `string` | Unique subscription token |
-| `name` | `string` | Subscription name |
-| `description` | `string\|null` | Optional description |
-| `sources_count` | `integer` | Total number of resolved configs |
-| `created_at` | `datetime` | Creation timestamp |
-| `updated_at` | `datetime` | Last update timestamp |
+
+| Field           | Type           | Description                      |
+| --------------- | -------------- | -------------------------------- |
+| `token`         | `string`       | Unique subscription token        |
+| `name`          | `string`       | Subscription name                |
+| `description`   | `string\|null` | Optional description             |
+| `sources_count` | `integer`      | Total number of resolved configs |
+| `created_at`    | `datetime`     | Creation timestamp               |
+| `updated_at`    | `datetime`     | Last update timestamp            |
 
 **Example**:
 
@@ -355,8 +422,9 @@ class SubscriptionResponse(BaseModel):
 
 **Fields**:
 All fields from `SubscriptionListItem` plus:
-| Field | Type | Description |
-|-------|------|-------------|
+
+| Field     | Type               | Description         |
+| --------- | ------------------ | ------------------- |
 | `sources` | `array[SourceOut]` | Full source details |
 
 **Example**:
@@ -372,6 +440,8 @@ All fields from `SubscriptionListItem` plus:
       "source_type": "config",
       "data": "vless://...",
       "order_index": 0,
+      "is_hidden": false,
+      "max_depth": 3,
       "created_at": "2026-04-27T10:00:00Z",
       "updated_at": "2026-04-27T10:00:00Z"
     }
@@ -399,14 +469,15 @@ class RefreshSubscriptionResponse(BaseModel):
 ```
 
 **Fields**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `refreshed` | `integer` | Successfully refreshed sources |
-| `failed` | `integer` | Sources that failed to refresh |
-| `skipped` | `integer` | Sources skipped (CONFIG, INTERNAL_TOKEN) |
-| `total` | `integer` | Total sources processed |
-| `message` | `string` | Status message |
-| `errors` | `array[string]` | Error messages for failed sources |
+
+| Field       | Type            | Description                              |
+| ----------- | --------------- | ---------------------------------------- |
+| `refreshed` | `integer`       | Successfully refreshed sources           |
+| `failed`    | `integer`       | Sources that failed to refresh           |
+| `skipped`   | `integer`       | Sources skipped (CONFIG, INTERNAL_TOKEN) |
+| `total`     | `integer`       | Total sources processed                  |
+| `message`   | `string`        | Status message                           |
+| `errors`    | `array[string]` | Error messages for failed sources        |
 
 **Example**:
 
@@ -425,19 +496,29 @@ class RefreshSubscriptionResponse(BaseModel):
 
 ### ResolvedConfig
 
-Resolved subscription configuration (internal).
+Resolved individual proxy config, produced by the resolver during subscription resolution (internal).
 
 ```python
 class ResolvedConfig(BaseModel):
-    configs: list[str]
-    description: str
+    hash: str
+    config: str
+    is_hidden: bool | None = None
+    max_depth: int | None = 3
 ```
 
 **Fields**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `configs` | `array[string]` | List of base64-encoded proxy configs |
-| `description` | `string` | Subscription description |
+
+| Field       | Type            | Description                                             |
+| ----------- | --------------- | ------------------------------------------------------- |
+| `hash`      | `string`        | Config hash (unique identifier)                         |
+| `config`    | `string`        | Full proxy config URI, with comment appended if present |
+| `is_hidden` | `boolean\|null` | Whether this config is hidden from end users            |
+| `max_depth` | `integer\|null` | Max nesting depth inherited from the originating source |
+
+**Notes**:
+
+- Configs marked `is_hidden=true` are excluded from the final resolved subscription text (see `GET /sub/{token}`)
+- `max_depth` controls how deep the resolver follows `INTERNAL_TOKEN` sources before stopping
 
 ---
 
@@ -453,9 +534,10 @@ class UserCreateRequest(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `user_id` | `integer` | Yes | > 0 |
+
+| Field     | Type      | Required | Constraints |
+| --------- | --------- | -------- | ----------- |
+| `user_id` | `integer` | Yes      | > 0         |
 
 **Example**:
 
@@ -480,12 +562,13 @@ class UserResponse(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `user_hash` | `string` | SHA-256 hash of user credentials |
-| `user_id` | `integer` | External user ID |
-| `api_token` | `string` | Full API token (format: `{user_id}:{hash}`) |
-| `is_active` | `boolean` | Account active status |
+
+| Field       | Type      | Description                                 |
+| ----------- | --------- | ------------------------------------------- |
+| `user_hash` | `string`  | SHA-256 hash of user credentials            |
+| `user_id`   | `integer` | External user ID                            |
+| `api_token` | `string`  | Full API token (format: `{user_id}:{hash}`) |
+| `is_active` | `boolean` | Account active status                       |
 
 **Example**:
 
@@ -526,9 +609,10 @@ class UserStatusUpdateRequest(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Required |
-|-------|------|----------|
-| `is_active` | `boolean` | Yes |
+
+| Field       | Type      | Required |
+| ----------- | --------- | -------- |
+| `is_active` | `boolean` | Yes      |
 
 **Example**:
 
@@ -550,9 +634,10 @@ class TokenRefreshRequest(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `user_id` | `integer` | Yes | > 0 |
+
+| Field     | Type      | Required | Constraints |
+| --------- | --------- | -------- | ----------- |
+| `user_id` | `integer` | Yes      | > 0         |
 
 ---
 
@@ -567,10 +652,11 @@ class TokenRefreshResponse(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `user_id` | `integer` | User ID |
-| `new_api_token` | `string` | New API token |
+
+| Field           | Type      | Description   |
+| --------------- | --------- | ------------- |
+| `user_id`       | `integer` | User ID       |
+| `new_api_token` | `string`  | New API token |
 
 **Example**:
 
@@ -594,10 +680,11 @@ class IPBanRequest(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `ip_address` | `string` | Yes | Valid IPv4/IPv6 |
-| `duration_seconds` | `integer` | No | > 0, null = permanent |
+
+| Field              | Type      | Required | Constraints           |
+| ------------------ | --------- | -------- | --------------------- |
+| `ip_address`       | `string`  | Yes      | Valid IPv4/IPv6       |
+| `duration_seconds` | `integer` | No       | > 0, null = permanent |
 
 **Example**:
 
@@ -623,12 +710,13 @@ class IPBanStatusResponse(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `ip_address` | `string` | IP address |
-| `is_banned` | `boolean` | Whether IP is banned |
-| `banned_until` | `datetime\|null` | Ban expiration (null = permanent) |
-| `remaining_seconds` | `integer\|null` | Seconds until unban (null = permanent) |
+
+| Field               | Type             | Description                            |
+| ------------------- | ---------------- | -------------------------------------- |
+| `ip_address`        | `string`         | IP address                             |
+| `is_banned`         | `boolean`        | Whether IP is banned                   |
+| `banned_until`      | `datetime\|null` | Ban expiration (null = permanent)      |
+| `remaining_seconds` | `integer\|null`  | Seconds until unban (null = permanent) |
 
 **Example**:
 
@@ -675,10 +763,11 @@ class IPBanListResponse(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Description |
-|-------|------|-------------|
+
+| Field     | Type                | Description         |
+| --------- | ------------------- | ------------------- |
 | `entries` | `array[IPBanEntry]` | List of ban entries |
-| `total` | `integer` | Total count |
+| `total`   | `integer`           | Total count         |
 
 **Example**:
 
@@ -710,9 +799,10 @@ class IPUnbanRequest(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Required |
-|-------|------|----------|
-| `ip_address` | `string` | Yes |
+
+| Field        | Type     | Required |
+| ------------ | -------- | -------- |
+| `ip_address` | `string` | Yes      |
 
 ---
 
@@ -728,11 +818,12 @@ class IPUnbanResponse(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `ip_address` | `string` | IP address |
+
+| Field        | Type      | Description                      |
+| ------------ | --------- | -------------------------------- |
+| `ip_address` | `string`  | IP address                       |
 | `was_banned` | `boolean` | Whether IP was previously banned |
-| `message` | `string` | Result message |
+| `message`    | `string`  | Result message                   |
 
 **Example**:
 
@@ -757,10 +848,11 @@ class WhitelistAddRequest(AdminBaseModel):
 ```
 
 **Fields**:
-| Field | Type | Required | Constraints |
-|-------|------|----------|-------------|
-| `ip_address` | `string` | Yes | Valid IPv4/IPv6/CIDR |
-| `description` | `string` | No | Max 255 chars |
+
+| Field         | Type     | Required | Constraints          |
+| ------------- | -------- | -------- | -------------------- |
+| `ip_address`  | `string` | Yes      | Valid IPv4/IPv6/CIDR |
+| `description` | `string` | No       | Max 255 chars        |
 
 **Example**:
 
@@ -894,10 +986,11 @@ class SourceType(str, Enum):
 ```
 
 **Values**:
-| Value | Description | Example |
-|-------|-------------|---------|
-| `CONFIG` | Direct proxy configuration URI | `vless://uuid@server:port` |
-| `EXTERNAL_URL` | External subscription URL | `https://provider.com/sub` |
+
+| Value            | Description                       | Example                            |
+| ---------------- | --------------------------------- | ---------------------------------- |
+| `CONFIG`         | Direct proxy configuration URI    | `vless://uuid@server:port`         |
+| `EXTERNAL_URL`   | External subscription URL         | `https://provider.com/sub`         |
 | `INTERNAL_TOKEN` | Reference to another subscription | `https://yourdomain.com/sub/token` |
 
 **Detection Logic**:
@@ -930,15 +1023,16 @@ class ProxyProtocol(str, Enum):
 ```
 
 **Protocols**:
-| Protocol | URI Prefix | Common Ports |
-|----------|-----------|--------------|
-| VLESS | `vless://` | 443, 80 |
-| VMess | `vmess://` | 443, 80 |
-| Trojan | `trojan://` | 443 |
-| Shadowsocks | `ss://` | 8388 |
-| Hysteria | `hysteria://` | 36712 |
-| Hysteria 2 | `hysteria2://` | 443 |
-| TUIC | `tuic://` | 443 |
+
+| Protocol    | URI Prefix     | Common Ports |
+| ----------- | -------------- | ------------ |
+| VLESS       | `vless://`     | 443, 80      |
+| VMess       | `vmess://`     | 443, 80      |
+| Trojan      | `trojan://`    | 443          |
+| Shadowsocks | `ss://`        | 8388         |
+| Hysteria    | `hysteria://`  | 36712        |
+| Hysteria 2  | `hysteria2://` | 443          |
+| TUIC        | `tuic://`      | 443          |
 
 ---
 
@@ -966,27 +1060,39 @@ class ProxyProtocol(str, Enum):
 
 ### Custom Validators
 
-#### Source Cleaning
+#### Source Normalization
+
+`sources` fields accept a mix of plain strings and `SourceCreateRequest` objects. Both forms are normalized to objects before further validation:
 
 ```python
-@field_validator('sources', mode='before')
-@classmethod
-def _clean_sources(cls, v: Any) -> list[str]:
-    if not isinstance(v, list):
-        raise ValueError('sources must be a list')
-
-    # Remove duplicates while preserving order
-    seen = set()
+def _normalize_sources(values):
     cleaned = []
-    for source in v:
-        if isinstance(source, str):
-            source = source.strip()
-            if source and source not in seen:
-                seen.add(source)
-                cleaned.append(source)
+    seen = set()
+
+    for item in values:
+        if isinstance(item, str):
+            key = item.strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            cleaned.append({"data": normalize_source(key, settings.max_comment_length)})
+        elif isinstance(item, dict):
+            key = (item.get("data") or "").strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            item = item.copy()
+            item["data"] = normalize_source(key, settings.max_comment_length)
+            cleaned.append(item)
+        else:
+            raise TypeError("Each source must be either a string or an object")
 
     return cleaned
 ```
+
+- Deduplication is keyed on the (stripped) `data` value, preserving first occurrence order
+- String items become `{"data": "<normalized string>"}` with default `is_hidden`/`max_depth`
+- `SourcesRemoveRequest.source_ids` uses the simpler `_clean_sources` helper (plain string list dedup/strip only)
 
 #### At Least One Field
 
@@ -1018,7 +1124,7 @@ PositiveInt = Annotated[int, Field(gt=0)]
 NonNegativeInt = Annotated[int, Field(ge=0)]
 
 # Lists
-SourceList = Annotated[list[str], Field(max_length=150)]
+SourceList = Annotated[list[SourceCreateRequest], Field(max_length=150)]
 IPAddress = Annotated[str, Field(min_length=7, max_length=45)]
 ```
 
@@ -1038,7 +1144,11 @@ IPAddress = Annotated[str, Field(min_length=7, max_length=45)]
     "vless://uuid@server1.com:443?encryption=none&security=tls&sni=server1.com&type=tcp#Server1",
     "vmess://eyJhZGQiOi...base64...#Server2",
     "https://provider.com/subscription",
-    "https://api.example.com/sub/another-token"
+    {
+      "data": "https://api.example.com/sub/another-token",
+      "is_hidden": true,
+      "max_depth": 1
+    }
   ]
 }
 ```
@@ -1056,6 +1166,8 @@ IPAddress = Annotated[str, Field(min_length=7, max_length=45)]
       "source_type": "config",
       "data": "vless://uuid@server1.com:443?encryption=none&security=tls&sni=server1.com&type=tcp#Server1",
       "order_index": 0,
+      "is_hidden": false,
+      "max_depth": 3,
       "created_at": "2026-04-27T10:00:00.123456Z",
       "updated_at": "2026-04-27T10:00:00.123456Z"
     },
@@ -1064,6 +1176,8 @@ IPAddress = Annotated[str, Field(min_length=7, max_length=45)]
       "source_type": "config",
       "data": "vmess://eyJhZGQiOi...base64...#Server2",
       "order_index": 1,
+      "is_hidden": false,
+      "max_depth": 3,
       "created_at": "2026-04-27T10:00:00.234567Z",
       "updated_at": "2026-04-27T10:00:00.234567Z"
     },
@@ -1072,6 +1186,8 @@ IPAddress = Annotated[str, Field(min_length=7, max_length=45)]
       "source_type": "external_url",
       "data": "https://provider.com/subscription",
       "order_index": 2,
+      "is_hidden": false,
+      "max_depth": 3,
       "created_at": "2026-04-27T10:00:00.345678Z",
       "updated_at": "2026-04-27T10:00:00.345678Z"
     },
@@ -1080,6 +1196,8 @@ IPAddress = Annotated[str, Field(min_length=7, max_length=45)]
       "source_type": "internal_token",
       "data": "https://api.example.com/sub/another-token",
       "order_index": 3,
+      "is_hidden": true,
+      "max_depth": 1,
       "created_at": "2026-04-27T10:00:00.456789Z",
       "updated_at": "2026-04-27T10:00:00.456789Z"
     }
@@ -1108,4 +1226,4 @@ Access at: `https://api.example.com/openapi.json`
 
 ---
 
-**Last Updated**: April 27, 2026
+**Last Updated**: July 16, 2026

@@ -10,10 +10,11 @@ Handles all subscription-related operations including:
 """
 
 import logging
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 from datetime import timedelta
 
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models.base import utcnow
@@ -22,7 +23,6 @@ from src.core.enums import SourceType
 from src.core.exceptions import (
     AuthorizationError,
     CircularReferenceError,
-    ConflictError,
     DuplicateNameError,
     InvalidConfigError,
     InvalidURLError,
@@ -53,7 +53,7 @@ from src.utils.config_parser import (
 from src.utils.http_client import get_http_client
 from src.utils.url_validator import is_internal, validate_external_url
 
-from src.schemas import RefreshSubscriptionResponse
+from src.schemas import RefreshSubscriptionResponse, SourceCreateRequest
 
 
 logger = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ class SubscriptionService:
         user_hash: str,
         name: str,
         description: Optional[str] = None,
-        sources: Optional[List[str]] = None,
+        sources: Optional[List[SourceCreateRequest]] = None,
     ) -> Subscription:
         """
         Create a new subscription.
@@ -414,7 +414,7 @@ class SubscriptionService:
         self,
         token: str,
         user_hash: str,
-        sources: List[str],
+        sources: List[SourceCreateRequest],
     ) -> Subscription:
         """
         Add sources to subscription.
@@ -438,7 +438,7 @@ class SubscriptionService:
         self,
         token: str,
         user_hash: str,
-        sources: List[str],
+        sources: List[SourceCreateRequest],
     ) -> Subscription:
         """
         Replace all sources in subscription.
@@ -450,13 +450,13 @@ class SubscriptionService:
         preserved_source_ids = set()
     
         for source in sources:
-            source_type = await self._detect_source_type(source)
+            source_type = await self._detect_source_type(source.data)
     
             if source_type in (
                 SourceType.EXTERNAL_URL,
                 SourceType.INTERNAL_TOKEN,
             ):
-                source_id = get_url_hash(source)
+                source_id = get_url_hash(source.data)
             else:
                 continue
     
@@ -547,7 +547,7 @@ class SubscriptionService:
         self,
         name: str,
         user_hash: str,
-        sources: List[str],
+        sources: List[SourceCreateRequest],
     ) -> Subscription:
         """
         Add sources to subscription by name.
@@ -604,7 +604,7 @@ class SubscriptionService:
         name: str,
         user_hash: str,
         source_ids: List[str],
-    ) -> Subscription:
+    ) -> Optional[Subscription]:
         """
         Remove specific sources from subscription by name.
         
@@ -678,6 +678,68 @@ class SubscriptionService:
         subscription.updated_at = utcnow()
 
         await self.session.commit()
+
+    async def update_config(
+            self,
+            token: str,
+            user_hash: str,
+            config_hash: str,
+            comment: Optional[str] = None,
+            is_hidden: Optional[bool] = None,
+            max_depth: Annotated[
+                int | None,
+                Field(ge=0, le=settings.max_nesting_depth),
+            ] = None
+
+    ) -> None:
+        """Update source settings.
+
+        Allows partial updates of a source associated with a subscription.
+        Only the parameters explicitly provided are modified.
+        
+        Supported settings:
+        - comment
+        - is_hidden
+        - max_depth
+        """
+
+        # Verify ownership
+        subscription = await self.get_subscription(token, user_hash)
+
+        await self.check_source(subscription, config_hash)
+        
+        
+        if comment is not None:
+            # Upsert comment
+            await self.comment_repo.upsert_comment(
+                subscription_token=token,
+                config_hash=config_hash,
+                comment=comment,
+            )
+
+        if is_hidden is not None or max_depth is not None:
+            await self.source_repo.upsert_config(
+                    subscription_token=token,
+                    config_hash=config_hash,
+                    is_hidden=is_hidden,
+                    max_depth=max_depth,
+                    )
+
+        source = await self.source_repo.get_by_pk(
+            token,
+            config_hash,
+        )
+
+        if source:
+            await self.source_repo.update(
+                source,
+                updated_at=utcnow(),
+            )
+
+        subscription.updated_at = utcnow()
+
+        await self.session.commit()
+
     
     async def update_config_comment_by_name(
         self,
@@ -835,7 +897,7 @@ class SubscriptionService:
     async def _add_sources_internal(
         self,
         subscription: Subscription,
-        sources: List[str],
+        sources: List[SourceCreateRequest],
         user_hash: str,
     ) -> None:
         """
@@ -864,8 +926,8 @@ class SubscriptionService:
         # Calculate order index for new sources
         order_index = current_count
         
-        for raw_source in sources:
-            raw_source = raw_source.strip()
+        for source in sources:
+            raw_source = source.data.strip()
             if not raw_source:
                 continue
             
@@ -879,7 +941,7 @@ class SubscriptionService:
             if source_type == SourceType.CONFIG:
                 await self._add_config_source(
                     subscription.token,
-                    raw_source,
+                    source,
                     seen_ids,
                     order_index,
                 )
@@ -887,7 +949,7 @@ class SubscriptionService:
             elif source_type == SourceType.EXTERNAL_URL:
                 await self._add_external_source(
                     subscription.token,
-                    raw_source,
+                    source,
                     seen_ids,
                     order_index,
                 )
@@ -895,7 +957,7 @@ class SubscriptionService:
             elif source_type == SourceType.INTERNAL_TOKEN:
                 await self._add_internal_source(
                     subscription.token,
-                    raw_source,
+                    source,
                     user_hash,
                     seen_ids,
                     order_index,
@@ -923,7 +985,7 @@ class SubscriptionService:
     async def _add_config_source(
         self,
         subscription_token: str,
-        config: str,
+        source: SourceCreateRequest,
         seen_ids: set,
         order_index: int,
     ) -> None:
@@ -936,12 +998,12 @@ class SubscriptionService:
         - Do NOT change created_at
         """
         # Validate config
-        is_valid, error = validate_proxy_config(config)
+        is_valid, error = validate_proxy_config(source.data)
         if not is_valid:
-            raise InvalidConfigError(config, [error] if error else None)
+            raise InvalidConfigError(source.data, [error] if error else None)
         
         # Split config and comment
-        base_config, comment = split_config_and_comment(config)
+        base_config, comment = split_config_and_comment(source.data)
         config_hash = get_config_hash(base_config)
         
         # Check if this config already exists in this subscription
@@ -973,7 +1035,7 @@ class SubscriptionService:
         # Detect protocol
         protocol = detect_protocol(base_config)
         if not protocol:
-            raise InvalidConfigError(config, ["Unknown protocol"])
+            raise InvalidConfigError(source.data, ["Unknown protocol"])
         
         # Create or get proxy config (idempotent)
         await self.config_repo.get_or_create(
@@ -992,6 +1054,8 @@ class SubscriptionService:
             subscription_token=subscription_token,
             source_type=SourceType.CONFIG.value,
             config_hash=config_hash,
+            is_hidden=source.is_hidden,
+            max_depth=source.max_depth,
             order_index=order_index,
         )
 
@@ -1007,7 +1071,7 @@ class SubscriptionService:
     async def _add_external_source(
         self,
         subscription_token: str,
-        url: str,
+        source: SourceCreateRequest,
         seen_ids: set,
         order_index: int,
     ) -> None:
@@ -1019,6 +1083,9 @@ class SubscriptionService:
         - Private IPs (10.x, 192.168.x, 172.16-31.x)
         - Link-local addresses
         """
+
+        url = source.data
+
         if not is_http_url(url):
             raise InvalidURLError(url)
         
@@ -1043,6 +1110,8 @@ class SubscriptionService:
             subscription_token=subscription_token,
             source_type=SourceType.EXTERNAL_URL.value,
             external_url=url,
+            is_hidden=source.is_hidden,
+            max_depth=source.max_depth,
             order_index=order_index,
         )
         
@@ -1059,13 +1128,15 @@ class SubscriptionService:
     async def _add_internal_source(
         self,
         subscription_token: str,
-        url: str,
+        source: SourceCreateRequest,
         user_hash: str,
         seen_ids: set,
         order_index: int,
     ) -> None:
         """Add an INTERNAL type source."""
         
+        url = source.data
+
         internal_token = self.extract_token(url)
     
         if not internal_token:
@@ -1098,6 +1169,8 @@ class SubscriptionService:
             subscription_token=subscription_token,
             source_type=SourceType.INTERNAL_TOKEN.value,
             internal_token=internal_token,
+            is_hidden=source.is_hidden,
+            max_depth=source.max_depth,
             order_index=order_index,
         )
         

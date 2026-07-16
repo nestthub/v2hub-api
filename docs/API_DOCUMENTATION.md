@@ -21,6 +21,7 @@ The VPN Subscription API provides a comprehensive solution for managing and aggr
 
 - **Multi-source aggregation**: Combine proxy configs from direct URIs, external URLs, and internal references
 - **Per-subscription comments**: Add custom comments to configs within each subscription
+- **Per-source visibility & nesting control**: Hide individual sources from resolved output and cap how deep internal references are followed (`is_hidden`, `max_depth`)
 - **Recursive resolution**: Automatic resolution of nested subscription references
 - **Two-tier caching**: Redis + PostgreSQL for optimal performance
 - **Circular reference detection**: Prevents infinite loops in subscription chains
@@ -193,17 +194,30 @@ Create a new subscription with optional initial sources.
   "sources": [
     "vless://uuid@server:port?encryption=none#MyServer",
     "https://provider.com/subscription",
-    "https://your-domain.com/sub/another-token"
+    {
+      "data": "https://your-domain.com/sub/another-token",
+      "is_hidden": true,
+      "max_depth": 1
+    }
   ]
 }
 ```
 
 **Request Schema**:
-| Field | Type | Required | Description | Constraints |
-|-------|------|----------|-------------|-------------|
-| `name` | string | Yes | Subscription name | 1-64 chars, unique per user |
-| `description` | string | No | Description | Max 64 chars |
-| `sources` | array[string] | No | Initial sources | Max 150 items |
+
+| Field         | Type                          | Required | Description       | Constraints                 |
+| ------------- | ----------------------------- | -------- | ----------------- | --------------------------- |
+| `name`        | string                        | Yes      | Subscription name | 1-64 chars, unique per user |
+| `description` | string                        | No       | Description       | Max 64 chars                |
+| `sources`     | array[string \| SourceObject] | No       | Initial sources   | Max 150 items               |
+
+Each item in `sources` can be a plain string (shorthand for `{"data": "<string>"}`) or a source object:
+
+| Field       | Type    | Required | Description                                            | Constraints      |
+| ----------- | ------- | -------- | ------------------------------------------------------ | ---------------- |
+| `data`      | string  | Yes      | Config URI, URL, or internal token                     | Non-empty        |
+| `is_hidden` | boolean | No       | Omit this source's configs from resolved output        | Default `false`  |
+| `max_depth` | integer | No       | Max recursion depth for nested subscription references | 0-3, default `3` |
 
 **Response** (201 Created):
 
@@ -218,6 +232,8 @@ Create a new subscription with optional initial sources.
       "source_type": "config",
       "data": "vless://uuid@server:port?encryption=none#MyServer",
       "order_index": 0,
+      "is_hidden": false,
+      "max_depth": 3,
       "created_at": "2026-04-27T10:00:00Z",
       "updated_at": "2026-04-27T10:00:00Z"
     },
@@ -226,6 +242,8 @@ Create a new subscription with optional initial sources.
       "source_type": "external_url",
       "data": "https://provider.com/subscription",
       "order_index": 1,
+      "is_hidden": false,
+      "max_depth": 3,
       "created_at": "2026-04-27T10:00:00Z",
       "updated_at": "2026-04-27T10:00:00Z"
     },
@@ -234,6 +252,8 @@ Create a new subscription with optional initial sources.
       "source_type": "internal_token",
       "data": "https://your-domain.com/sub/another-token",
       "order_index": 2,
+      "is_hidden": true,
+      "max_depth": 1,
       "created_at": "2026-04-27T10:00:00Z",
       "updated_at": "2026-04-27T10:00:00Z"
     }
@@ -306,6 +326,8 @@ Retrieve detailed information about a specific subscription.
       "source_type": "config",
       "data": "vless://uuid@server:port#MyServer",
       "order_index": 0,
+      "is_hidden": false,
+      "max_depth": 3,
       "created_at": "2026-04-27T10:00:00Z",
       "updated_at": "2026-04-27T10:00:00Z"
     }
@@ -343,10 +365,11 @@ Update subscription name and/or description.
 ```
 
 **Request Schema**:
-| Field | Type | Required | Description | Constraints |
-|-------|------|----------|-------------|-------------|
-| `name` | string | No | New name | 1-64 chars, unique per user |
-| `description` | string | No | New description | Max 64 chars |
+
+| Field         | Type   | Required | Description     | Constraints                 |
+| ------------- | ------ | -------- | --------------- | --------------------------- |
+| `name`        | string | No       | New name        | 1-64 chars, unique per user |
+| `description` | string | No       | New description | Max 64 chars                |
 
 **Note**: At least one field must be provided.
 
@@ -395,19 +418,22 @@ Add new sources to an existing subscription.
 {
   "sources": [
     "vless://uuid@server:port#NewServer",
-    "https://new-provider.com/sub"
+    { "data": "https://new-provider.com/sub", "is_hidden": true }
   ]
 }
 ```
 
 **Request Schema**:
-| Field | Type | Required | Description | Constraints |
-|-------|------|----------|-------------|-------------|
-| `sources` | array[string] | Yes | Sources to add | 1-150 items |
+
+| Field     | Type                          | Required | Description    | Constraints |
+| --------- | ----------------------------- | -------- | -------------- | ----------- |
+| `sources` | array[string \| SourceObject] | Yes      | Sources to add | 1-150 items |
+
+Each item can be a plain string or a source object with `data` (required), `is_hidden` (default `false`), and `max_depth` (default `3`, range 0-3) — see [Create Subscription](#create-subscription) for the object shape.
 
 **Notes**:
 
-- Duplicates are automatically filtered out
+- Duplicates are automatically filtered out (by `data`)
 - Sources can include comments using `#` syntax
 - URLs starting with `https://your-domain.com/sub/` are treated as internal references
 
@@ -437,15 +463,18 @@ Replace all sources in a subscription atomically.
 {
   "sources": [
     "vless://uuid@server:port#Server1",
-    "vmess://uuid@server:port#Server2"
+    { "data": "vmess://uuid@server:port#Server2", "max_depth": 0 }
   ]
 }
 ```
 
 **Request Schema**:
-| Field | Type | Required | Description | Constraints |
-|-------|------|----------|-------------|-------------|
-| `sources` | array[string] | Yes | New sources | Max 150 items, empty array allowed |
+
+| Field     | Type                          | Required | Description | Constraints                        |
+| --------- | ----------------------------- | -------- | ----------- | ---------------------------------- |
+| `sources` | array[string \| SourceObject] | Yes      | New sources | Max 150 items, empty array allowed |
+
+Same item shape as [Add Sources](#add-sources).
 
 **Note**: This is an atomic operation - all existing sources are deleted before new ones are added.
 
@@ -477,9 +506,10 @@ Remove specific sources by their IDs.
 ```
 
 **Request Schema**:
-| Field | Type | Required | Description | Constraints |
-|-------|------|----------|-------------|-------------|
-| `source_ids` | array[string] | Yes | IDs to remove | Min 1 item |
+
+| Field        | Type          | Required | Description   | Constraints |
+| ------------ | ------------- | -------- | ------------- | ----------- |
+| `source_ids` | array[string] | Yes      | IDs to remove | Min 1 item  |
 
 **Response** (200 OK): Same as Get Subscription Details (with sources removed)
 
@@ -490,7 +520,56 @@ Remove specific sources by their IDs.
 
 ---
 
-#### Update Config Comment
+#### Update Config
+
+Partially update settings (comment, visibility, nesting depth) for a specific config source within a subscription.
+
+**Endpoint**: `PATCH /api/v1/subs/{token}/config`
+
+**Parameters**:
+
+- `token` (path, required): Subscription token
+
+**Request Body**:
+
+```json
+{
+  "config_id": "config_hash_value",
+  "comment": "My custom comment",
+  "is_hidden": false,
+  "max_depth": 2
+}
+```
+
+**Request Schema**:
+
+| Field       | Type    | Required | Description                                         | Constraints                         |
+| ----------- | ------- | -------- | --------------------------------------------------- | ----------------------------------- |
+| `config_id` | string  | Yes      | Config hash                                         | Min 1 char                          |
+| `comment`   | string  | No       | Comment text                                        | Max 256 chars, no `#` prefix needed |
+| `is_hidden` | boolean | No       | Hide this source's configs from resolved output     | -                                   |
+| `max_depth` | integer | No       | Max nesting depth for source visibility propagation | 0-3                                 |
+
+Only the fields provided in the request are modified; omitted fields are left unchanged.
+
+**Notes**:
+
+- Same proxy config can have different comments in different subscriptions
+- If `comment` is set to null or empty, uses domain name as default
+- Comments are appended to configs using `#` when resolving
+
+**Response** (204 No Content): Empty body
+
+**Error Responses**:
+
+- `404 Not Found`: Subscription or config not found
+- `400 Bad Request`: Invalid config_id
+
+---
+
+#### Update Config Comment <sup>Deprecated</sup>
+
+> **Deprecated**: This endpoint still works and continues to be fully supported by the API and official client libraries, but it will not receive further updates and may be removed in a future major version. Use [Update Config](#update-config) instead, which supports the same comment update plus `is_hidden` and `max_depth`.
 
 Update or set comment for a specific config within a subscription.
 
@@ -510,10 +589,11 @@ Update or set comment for a specific config within a subscription.
 ```
 
 **Request Schema**:
-| Field | Type | Required | Description | Constraints |
-|-------|------|----------|-------------|-------------|
-| `config_id` | string | Yes | Config hash | Min 1 char |
-| `comment` | string | No | Comment text | Max 256 chars, no `#` prefix needed |
+
+| Field       | Type   | Required | Description  | Constraints                         |
+| ----------- | ------ | -------- | ------------ | ----------------------------------- |
+| `config_id` | string | Yes      | Config hash  | Min 1 char                          |
+| `comment`   | string | No       | Comment text | Max 256 chars, no `#` prefix needed |
 
 **Notes**:
 
@@ -554,14 +634,15 @@ Manually refresh all external URL sources in a subscription.
 ```
 
 **Response Schema**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `refreshed` | integer | Number of successfully refreshed sources |
-| `failed` | integer | Number of sources that failed to refresh |
-| `skipped` | integer | Number of sources skipped (CONFIG, INTERNAL_TOKEN) |
-| `total` | integer | Total sources processed |
-| `message` | string | Status message |
-| `errors` | array[string] | List of error messages for failed sources |
+
+| Field       | Type          | Description                                        |
+| ----------- | ------------- | -------------------------------------------------- |
+| `refreshed` | integer       | Number of successfully refreshed sources           |
+| `failed`    | integer       | Number of sources that failed to refresh           |
+| `skipped`   | integer       | Number of sources skipped (CONFIG, INTERNAL_TOKEN) |
+| `total`     | integer       | Total sources processed                            |
+| `message`   | string        | Status message                                     |
+| `errors`    | array[string] | List of error messages for failed sources          |
 
 **Notes**:
 
@@ -602,9 +683,10 @@ Create a new user account with generated credentials.
 ```
 
 **Request Schema**:
-| Field | Type | Required | Description | Constraints |
-|-------|------|----------|-------------|-------------|
-| `user_id` | integer | Yes | External user ID | > 0 |
+
+| Field     | Type    | Required | Description      | Constraints |
+| --------- | ------- | -------- | ---------------- | ----------- |
+| `user_id` | integer | Yes      | External user ID | > 0         |
 
 **Response** (201 Created):
 
@@ -618,12 +700,13 @@ Create a new user account with generated credentials.
 ```
 
 **Response Schema**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `user_hash` | string | Generated user hash (SHA-256) |
-| `user_id` | integer | User ID |
-| `api_token` | string | Generated API token for authentication |
-| `is_active` | boolean | Account active status |
+
+| Field       | Type    | Description                            |
+| ----------- | ------- | -------------------------------------- |
+| `user_hash` | string  | Generated user hash (SHA-256)          |
+| `user_id`   | integer | User ID                                |
+| `api_token` | string  | Generated API token for authentication |
+| `is_active` | boolean | Account active status                  |
 
 **Error Responses**:
 
@@ -706,9 +789,10 @@ Enable or disable a user account.
 ```
 
 **Request Schema**:
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `is_active` | boolean | Yes | New account status |
+
+| Field       | Type    | Required | Description        |
+| ----------- | ------- | -------- | ------------------ |
+| `is_active` | boolean | Yes      | New account status |
 
 **Response** (200 OK):
 
@@ -778,10 +862,11 @@ Temporarily or permanently ban an IP address.
 ```
 
 **Request Schema**:
-| Field | Type | Required | Description | Constraints |
-|-------|------|----------|-------------|-------------|
-| `ip_address` | string | Yes | IP to ban | Valid IPv4/IPv6 |
-| `duration_seconds` | integer | No | Ban duration | > 0, null = permanent |
+
+| Field              | Type    | Required | Description  | Constraints           |
+| ------------------ | ------- | -------- | ------------ | --------------------- |
+| `ip_address`       | string  | Yes      | IP to ban    | Valid IPv4/IPv6       |
+| `duration_seconds` | integer | No       | Ban duration | > 0, null = permanent |
 
 **Response** (201 Created):
 
@@ -827,11 +912,12 @@ Remove an IP address from the ban list.
 ```
 
 **Response Schema**:
-| Field | Type | Description |
-|-------|------|-------------|
-| `ip_address` | string | Unbanned IP |
+
+| Field        | Type    | Description                      |
+| ------------ | ------- | -------------------------------- |
+| `ip_address` | string  | Unbanned IP                      |
 | `was_banned` | boolean | Whether IP was previously banned |
-| `message` | string | Result message |
+| `message`    | string  | Result message                   |
 
 ---
 
@@ -905,10 +991,11 @@ Add an IP address or CIDR range to the whitelist.
 ```
 
 **Request Schema**:
-| Field | Type | Required | Description | Constraints |
-|-------|------|----------|-------------|-------------|
-| `ip_address` | string | Yes | IP or CIDR range | Valid format |
-| `description` | string | No | Description | Max 255 chars |
+
+| Field         | Type   | Required | Description      | Constraints   |
+| ------------- | ------ | -------- | ---------------- | ------------- |
+| `ip_address`  | string | Yes      | IP or CIDR range | Valid format  |
+| `description` | string | No       | Description      | Max 255 chars |
 
 **Response** (201 Created):
 
@@ -1023,8 +1110,22 @@ interface Source {
   source_type: "config" | "external_url" | "internal_token";
   data: string; // Full source data (config URI, URL, or internal ref)
   order_index: number; // Display order (0-indexed)
+  is_hidden: boolean; // Whether this source's configs are hidden from resolved output
+  max_depth: number; // Max nesting depth for source visibility propagation (0-3)
   created_at: string; // ISO 8601 timestamp
   updated_at: string; // ISO 8601 timestamp
+}
+```
+
+### Source Input Object
+
+Shape used for items in `sources` arrays on `POST /subs`, `POST /subs/{token}/sources`, and `PUT /subs/{token}/sources`. A plain string is also accepted as shorthand for `{ data: "<string>" }`.
+
+```typescript
+interface SourceInput {
+  data: string; // Config URI, URL, or internal token (required)
+  is_hidden?: boolean; // Default: false
+  max_depth?: number; // Default: 3, range: 0-3
 }
 ```
 
@@ -1181,17 +1282,20 @@ curl -X POST https://api.example.com/api/v1/subs/abc123xyz456/sources \
   }'
 ```
 
-#### 4. Update Config Comment
+#### 4. Update Config
 
 ```bash
-curl -X PATCH https://api.example.com/api/v1/subs/abc123xyz456/comments \
+curl -X PATCH https://api.example.com/api/v1/subs/abc123xyz456/config \
   -H "Content-Type: application/json" \
   -H "API-Token: 12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" \
   -d '{
     "config_id": "config_hash_value",
-    "comment": "Fast US Server"
+    "comment": "Fast US Server",
+    "is_hidden": false
   }'
 ```
+
+> The older `PATCH /comments` endpoint (comment-only) still works and is documented under [Update Config Comment](#update-config-comment-deprecated), but is deprecated in favor of the endpoint above.
 
 #### 5. Get Resolved Subscription (Public)
 
@@ -1394,4 +1498,4 @@ Default configuration limits (can be customized via environment variables):
 For issues, questions, or feature requests, please contact the API maintainer or open an issue in the project repository.
 
 **API Version**: 1.0.0  
-**Last Updated**: April 27, 2026
+**Last Updated**: July 16, 2026

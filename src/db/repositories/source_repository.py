@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from sqlalchemy import delete, select, func
+from sqlalchemy import delete, select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import Source
@@ -50,6 +50,8 @@ class SourceRepository(BaseRepository[Source]):
         config_hash: Optional[str] = None,
         internal_token: Optional[str] = None,
         external_url: Optional[str] = None,
+        is_hidden: bool = False,
+        max_depth: int = 3,
         order_index: int = 0
     ) -> Source:
         """Create a new source."""
@@ -60,9 +62,50 @@ class SourceRepository(BaseRepository[Source]):
             config_hash=config_hash,
             internal_token=internal_token,
             external_url=external_url,
+            is_hidden=is_hidden,
+            max_depth=max_depth,
             order_index=order_index
         )
-    
+
+    async def get_config(
+        self,
+        subscription_token: str,
+        config_hash: str
+    ) -> Optional[Source]:
+        """Get specific config in a subscription."""
+        stmt = select(Source).where(
+            Source.subscription_token == subscription_token,
+            Source.config_hash == config_hash
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def upsert_config(
+        self,
+        subscription_token: str,
+        config_hash: str,
+        is_hidden: Optional[bool] = None,
+        max_depth: Optional[int] = None
+    ) -> Optional[Source]:
+        """Update a config."""
+
+        config = await self.get_config(
+                subscription_token=subscription_token,
+                config_hash=config_hash
+                )
+        kwargs = {}
+        
+        if is_hidden is not None:
+            kwargs["is_hidden"] = is_hidden
+        
+        if max_depth is not None:
+            kwargs["max_depth"] = max_depth
+
+
+        if config:
+            return await self.update(config, **kwargs)
+
+
     async def delete_all_for_subscription(
         self,
         subscription_token: str

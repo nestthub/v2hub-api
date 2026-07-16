@@ -1,5 +1,5 @@
-from .base import BaseModelConfig, _clean_sources
-from .sources import SourceOut
+from .base import BaseModelConfig
+from .sources import SourceCreateRequest, SourceOut
 
 from datetime import datetime
 from typing import Annotated, List, Optional
@@ -7,7 +7,7 @@ from typing import Annotated, List, Optional
 from pydantic import Field, computed_field, field_validator
 
 from src.core.config import settings
-from src.utils.config_parser import normalize_source
+from src.utils.config_parser import _normalize_sources
 
 
 
@@ -44,7 +44,7 @@ class SubscriptionCreateRequest(BaseModelConfig):
     description: Annotated[
         str | None, Field(None, description="Optional description", max_length=64)
     ] = None
-    sources: Annotated[list[str], Field(default_factory=list, description="Initial sources", max_length=settings.max_sources_per_subscription)]
+    sources: Annotated[List[SourceCreateRequest], Field(default_factory=list, description="Initial sources", max_length=settings.max_sources_per_subscription)]
 
     @field_validator("name", mode="before")
     @classmethod
@@ -56,14 +56,9 @@ class SubscriptionCreateRequest(BaseModelConfig):
 
     @field_validator("sources", mode="before")
     @classmethod
-    def clean_sources(cls, v: list[str]) -> list[str]:
-        v = _clean_sources(v)
-    
-        cleaned = []
-        for s in v:
-            s = normalize_source(s, settings.max_comment_length)
-            cleaned.append(s)
-    
+    def clean_sources(cls, values) -> list[str]:
+        cleaned = _normalize_sources(values)
+
         if not cleaned:
             raise ValueError("sources list is empty after deduplication")
     

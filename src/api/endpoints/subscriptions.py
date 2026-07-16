@@ -22,10 +22,10 @@ from src.core.exceptions import to_http_exception
 from src.db.models import Subscription
 from src.schemas import (
     SourceOut,
-    CommentUpdateRequest,
-    SourceAddRequest,
-    SourceRemoveRequest,
-    SourceReplaceRequest,
+    SourcesAddRequest,
+    SourcesRemoveRequest,
+    SourcesReplaceRequest,
+    SourceUpdateRequest,
     SubscriptionCreateRequest,
     SubscriptionListItem,
     SubscriptionResponse,
@@ -81,6 +81,10 @@ def convert_sources_to_out(subscription: Subscription) -> List[SourceOut]:
             source_type=SourceType(source.source_type),
             data=data,
             order_index=source.order_index,
+            
+            is_hidden=source.is_hidden,
+            max_depth=source.max_depth,
+
             created_at=source.created_at,
             updated_at=source.updated_at,
         ))
@@ -322,7 +326,7 @@ async def delete_subscription(
 )
 async def add_sources(
     token: str,
-    data: SourceAddRequest,
+    data: SourcesAddRequest,
     current_user: CurrentUser,
     service: SubscriptionServiceDep,
     resolver: ResolverServiceDep,
@@ -366,7 +370,7 @@ async def add_sources(
 )
 async def replace_sources(
     token: str,
-    data: SourceReplaceRequest,
+    data: SourcesReplaceRequest,
     current_user: CurrentUser,
     service: SubscriptionServiceDep,
     resolver: ResolverServiceDep,
@@ -409,7 +413,7 @@ async def replace_sources(
 )
 async def remove_sources(
     token: str,
-    data: SourceRemoveRequest,
+    data: SourcesRemoveRequest,
     current_user: CurrentUser,
     service: SubscriptionServiceDep,
     resolver: ResolverServiceDep,
@@ -454,7 +458,7 @@ async def remove_sources(
 )
 async def update_config_comment(
     token: str,
-    data: CommentUpdateRequest,
+    data: SourceUpdateRequest,
     current_user: CurrentUser,
     service: SubscriptionServiceDep,
 ):
@@ -478,6 +482,43 @@ async def update_config_comment(
     except Exception as e:
         raise to_http_exception(e)
 
+
+@router.patch(
+    "/{token}/config",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Update config",
+    description="Update specific config in this subscription",
+)
+async def update_config(
+    token: str,
+    data: SourceUpdateRequest,
+    current_user: CurrentUser,
+    service: SubscriptionServiceDep,
+):
+    """
+    Update settings for a specific config within this subscription.
+    
+    Allows partial updates of a config source. Only the fields provided
+    in the request will be modified.
+    
+    Supported fields:
+    - **config_id**: Hash of the config to update
+    - **comment**: Config comment text (without # prefix)
+    - **is_hidden**: Whether the config is hidden from end users
+    - **max_depth**: Maximum nesting depth for config visibility propagation
+    """
+    try:
+        await service.update_config(
+                token=token,
+                user_hash=current_user.user_hash,
+                config_hash=data.config_id,
+                comment=data.comment,
+                is_hidden=data.is_hidden,
+                max_depth=data.max_depth
+                )
+    
+    except Exception as e:
+        raise to_http_exception(e)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Subscription Refresh Endpoints

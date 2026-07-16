@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from src.core.config import settings
+from src.db.models import Base
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Engine Configuration
@@ -99,6 +100,7 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         # Test connection
         await conn.execute(text("SELECT 1"))
+        await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db() -> None:

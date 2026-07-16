@@ -1,12 +1,19 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 from pydantic import Field
 
 from .base import BaseModelConfig
 
+from typing_extensions import deprecated
+
+from src.core.config import settings
 
 
 
+@deprecated(
+    'The `CommentUpdateRequest` is deprecated; use `SourceUpdateRequest` instead.',
+    category=None,
+)
 class CommentUpdateRequest(BaseModelConfig):
     """Request to update config comment."""
 
@@ -21,6 +28,8 @@ class CommentUpdateRequest(BaseModelConfig):
 class ResolvedConfig(BaseModelConfig):
     hash: str
     config: str
+    is_hidden: Optional[bool] = None
+    max_depth: Optional[int] = settings.max_nesting_depth
 
 
 # ─────────────────────────────────────────────────────────

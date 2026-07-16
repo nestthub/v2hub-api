@@ -34,7 +34,7 @@ async def get_resolved_subscription_text(
     try:
         result = await resolver.resolve(token)
     
-        configs = [item.config for item in result.configs if item.config]
+        configs = [item.config for item in result.configs if item.config and not item.is_hidden]
     
         content = "\n".join(configs)
     
