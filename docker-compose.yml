@@ -113,73 +113,73 @@ services:
     networks:
       - frontend
 
-  alloy:
-    image: grafana/alloy:latest
-    container_name: alloy
-    restart: unless-stopped
-    expose:
-      - "12345"
-    volumes:
-      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy
-      - /var/run/docker.sock:/var/run/docker.sock # Docker API для дискавери
-    command:
-      - run
-      - /etc/alloy/config.alloy
-      - --server.http.listen-addr=0.0.0.0:12345 # включаем UI
-      - --stability.level=generally-available
-    privileged: true # нужно для чтения Docker сокета
-    networks:
-      - monitoring
-
-  loki:
-    image: grafana/loki:latest
-    container_name: loki
-    restart: unless-stopped
-    expose:
-      - "3100"
-    volumes:
-      - ./monitoring/loki.yml:/etc/loki/local-config.yaml
-      - lokidata:/loki
-    networks:
-      - monitoring
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    restart: unless-stopped
-    expose:
-      - "9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheusdata:/prometheus
-    networks:
-      - monitoring
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    restart: unless-stopped
-    expose:
-      - "3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SERVER_ROOT_URL=https://v2hub.link/grafana/
-      - GF_SERVER_SERVE_FROM_SUB_PATH=true
-    volumes:
-      - ./monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml
-      - grafanadata:/var/lib/grafana
-    networks:
-      - frontend
-      - monitoring
+      #  alloy:
+      #    image: grafana/alloy:latest
+      #    container_name: alloy
+      #    restart: unless-stopped
+      #    expose:
+      #      - "12345"
+      #    volumes:
+      #      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy
+      #      - /var/run/docker.sock:/var/run/docker.sock # Docker API для дискавери
+      #    command:
+      #      - run
+      #      - /etc/alloy/config.alloy
+      #      - --server.http.listen-addr=0.0.0.0:12345 # включаем UI
+      #      - --stability.level=generally-available
+      #    privileged: true # нужно для чтения Docker сокета
+      #    networks:
+      #      - monitoring
+      #
+      #  loki:
+      #    image: grafana/loki:latest
+      #    container_name: loki
+      #    restart: unless-stopped
+      #    expose:
+      #      - "3100"
+      #    volumes:
+      #      - ./monitoring/loki.yml:/etc/loki/local-config.yaml
+      #      - lokidata:/loki
+      #    networks:
+      #      - monitoring
+      #
+      #  prometheus:
+      #    image: prom/prometheus:latest
+      #    container_name: prometheus
+      #    restart: unless-stopped
+      #    expose:
+      #      - "9090"
+      #    volumes:
+      #      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      #      - prometheusdata:/prometheus
+      #    networks:
+      #      - monitoring
+      #
+      #  grafana:
+      #    image: grafana/grafana:latest
+      #    container_name: grafana
+      #    restart: unless-stopped
+      #    expose:
+      #      - "3000"
+      #    environment:
+      #      - GF_SECURITY_ADMIN_USER=admin
+      #      - GF_SECURITY_ADMIN_PASSWORD=admin
+      #      - GF_SERVER_ROOT_URL=https://v2hub.link/grafana/
+      #      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      #    volumes:
+      #      - ./monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml
+      #      - grafanadata:/var/lib/grafana
+      #    networks:
+      #      - frontend
+      #      - monitoring
 
 volumes:
   postgres_data:
   redis_data:
   celerybeat_data:
-  grafanadata:
-  prometheusdata:
-  lokidata:
+    #  grafanadata:
+    #  prometheusdata:
+    #  lokidata:
 
 networks:
   backend:
