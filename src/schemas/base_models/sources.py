@@ -41,12 +41,12 @@ class SourceOut(BaseModelConfig):
 class SourceCreateRequest(BaseModelConfig):
     data: str
 
-    is_hidden: bool = False
+    is_hidden: bool | None = None 
 
     max_depth: Annotated[
-        int,
+        int | None,
         Field(ge=0, le=settings.max_nesting_depth),
-    ] = settings.max_nesting_depth
+    ] = None
 
 
 

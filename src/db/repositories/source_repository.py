@@ -93,6 +93,9 @@ class SourceRepository(BaseRepository[Source]):
                 subscription_token=subscription_token,
                 config_hash=config_hash
                 )
+
+        if not config: return
+
         kwargs = {}
         
         if is_hidden is not None:
@@ -102,7 +105,7 @@ class SourceRepository(BaseRepository[Source]):
             kwargs["max_depth"] = max_depth
 
 
-        if config:
+        if kwargs:
             return await self.update(config, **kwargs)
 
 

@@ -311,102 +311,6 @@ class SubscriptionService:
 
     
     # ═══════════════════════════════════════════════════════════════════════
-    # Subscription CRUD by Name (alternative to token-based methods)
-    # ═══════════════════════════════════════════════════════════════════════
-    
-    async def get_subscription_by_name(
-        self,
-        name: str,
-        user_hash: str,
-    ) -> Subscription:
-        """
-        Get subscription by name.
-        
-        Args:
-            name: Subscription name
-            user_hash: Requesting user's hash
-            
-        Returns:
-            Subscription with sources loaded
-            
-        Raises:
-            SubscriptionNotFoundError: If not found
-        """
-        subscription = await self.subscription_repo.get_by_name(user_hash, name)
-        
-        if not subscription:
-            raise SubscriptionNotFoundError(name)
-        
-        # Load sources
-        subscription = await self.subscription_repo.get_by_token(
-            subscription.token,
-            load_sources=True
-        )
-        
-        return subscription
-    
-    async def update_subscription_by_name(
-        self,
-        name: str,
-        user_hash: str,
-        new_name: Optional[str] = None,
-        description: Optional[str] = None,
-    ) -> Subscription:
-        """
-        Update subscription metadata by name.
-        
-        Args:
-            name: Current subscription name
-            user_hash: Requesting user's hash
-            new_name: New name (if changing)
-            description: New description
-            
-        Returns:
-            Updated subscription
-            
-        Raises:
-            DuplicateNameError: If new name conflicts
-        """
-        subscription = await self.get_subscription_by_name(name, user_hash)
-        
-        update_data = {}
-        
-        if new_name and new_name != subscription.name:
-            # Check name uniqueness
-            existing = await self.subscription_repo.get_by_name(user_hash, new_name)
-            if existing:
-                raise DuplicateNameError(new_name)
-            update_data["name"] = new_name
-        
-        if description is not None:
-            update_data["description"] = description
-
-        update_data["updated_at"] = utcnow()
-        
-        if update_data:
-            subscription = await self.subscription_repo.update(
-                subscription,
-                **update_data
-            )
-        
-        await self.session.commit()
-
-        return subscription
-    
-    async def delete_subscription_by_name(self, name: str, user_hash: str) -> None:
-        """
-        Delete a subscription by name.
-        
-        Args:
-            name: Subscription name
-            user_hash: Requesting user's hash
-        """
-        subscription = await self.get_subscription_by_name(name, user_hash)
-        await self.delete_subscription(subscription.token, user_hash)
-
-        await self.session.commit()
-    
-    # ═══════════════════════════════════════════════════════════════════════
     # Source Management
     # ═══════════════════════════════════════════════════════════════════════
     
@@ -458,7 +362,8 @@ class SubscriptionService:
             ):
                 source_id = get_url_hash(source.data)
             else:
-                continue
+                config, _ = split_config_and_comment(source.data)
+                source_id = get_config_hash(config)
     
             preserved_source_ids.add(source_id)
     
@@ -539,58 +444,6 @@ class SubscriptionService:
         
         return await self.subscription_repo.get_by_token(token, load_sources=True)
     
-    # ═══════════════════════════════════════════════════════════════════════
-    # Source Management by Name
-    # ═══════════════════════════════════════════════════════════════════════
-    
-    async def add_sources_by_name(
-        self,
-        name: str,
-        user_hash: str,
-        sources: List[SourceCreateRequest],
-    ) -> Subscription:
-        """
-        Add sources to subscription by name.
-        
-        Args:
-            name: Subscription name
-            user_hash: Requesting user's hash
-            sources: Source configurations to add
-            
-        Returns:
-            Updated subscription
-        """
-        subscription = await self.get_subscription_by_name(name, user_hash)
-        await self._add_sources_internal(subscription, sources, user_hash)
-
-        await self.session.commit()
-        
-        return await self.subscription_repo.get_by_token(
-            subscription.token, 
-            load_sources=True
-        )
-    
-    async def replace_sources_by_name(
-        self,
-        name: str,
-        user_hash: str,
-        sources: List[str],
-    ) -> Subscription:
-        """
-        Replace all sources in subscription by name.
-        
-        Args:
-            name: Subscription name
-            user_hash: Requesting user's hash
-            sources: New sources (replaces all existing)
-            
-        Returns:
-            Updated subscription
-        """
-        subscription = await self.get_subscription_by_name(name, user_hash)
-        
-        return await self.replace_sources(subscription.token, user_hash, sources)
-
     async def check_source(self, subscription: Subscription, config_hash: str,) -> bool:
         hashes = [hash.id for hash in subscription.sources]
 
@@ -598,38 +451,6 @@ class SubscriptionService:
 
         raise NotFoundError(config_hash)
         
-    
-    async def remove_sources_by_name(
-        self,
-        name: str,
-        user_hash: str,
-        source_ids: List[str],
-    ) -> Optional[Subscription]:
-        """
-        Remove specific sources from subscription by name.
-        
-        Args:
-            name: Subscription name
-            user_hash: Requesting user's hash
-            source_ids: Source IDs to remove
-            
-        Returns:
-            Updated subscription
-        """
-        subscription = await self.get_subscription_by_name(name, user_hash)
-        
-        deleted = await self.source_repo.delete_by_ids(subscription.token, source_ids)
-        if deleted == 0:
-            logger.warning(f"No sources deleted for IDs: {source_ids}")
-
-        subscription.updated_at = utcnow()
-
-        await self.session.commit()
-        
-        return await self.subscription_repo.get_by_token(
-            subscription.token,
-            load_sources=True
-        )
     
     # ═══════════════════════════════════════════════════════════════════════
     # Config Comment Management
@@ -679,99 +500,83 @@ class SubscriptionService:
 
         await self.session.commit()
 
-    async def update_config(
+    async def _update_config(
             self,
-            token: str,
-            user_hash: str,
-            config_hash: str,
-            comment: Optional[str] = None,
-            is_hidden: Optional[bool] = None,
-            max_depth: Annotated[
-                int | None,
-                Field(ge=0, le=settings.max_nesting_depth),
-            ] = None
+            token,
+            config_hash,
+            **kwargs
+            ) -> bool:
 
-    ) -> None:
-        """Update source settings.
-
-        Allows partial updates of a source associated with a subscription.
-        Only the parameters explicitly provided are modified.
         
-        Supported settings:
-        - comment
-        - is_hidden
-        - max_depth
-        """
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        was_updated = True if kwargs else False
+            
 
-        # Verify ownership
-        subscription = await self.get_subscription(token, user_hash)
-
-        await self.check_source(subscription, config_hash)
-        
-        
-        if comment is not None:
-            # Upsert comment
+        if kwargs.get("comment", None) is not None:
             await self.comment_repo.upsert_comment(
                 subscription_token=token,
                 config_hash=config_hash,
-                comment=comment,
+                comment=kwargs.pop("comment"),
             )
 
-        if is_hidden is not None or max_depth is not None:
-            await self.source_repo.upsert_config(
-                    subscription_token=token,
-                    config_hash=config_hash,
-                    is_hidden=is_hidden,
-                    max_depth=max_depth,
-                    )
-
-        source = await self.source_repo.get_by_pk(
-            token,
-            config_hash,
-        )
-
-        if source:
-            await self.source_repo.update(
-                source,
-                updated_at=utcnow(),
+        await self.source_repo.upsert_config(
+            subscription_token=token,
+            config_hash=config_hash,
+            **kwargs
             )
 
-        subscription.updated_at = utcnow()
+        return was_updated
 
-        await self.session.commit()
 
-    
-    async def update_config_comment_by_name(
+
+
+    async def update_config(
         self,
-        name: str,
+        token: str,
         user_hash: str,
         config_hash: str,
-        comment: str,
+        comment: Optional[str] = None,
+        is_hidden: Optional[bool] = None,
+        max_depth: Annotated[
+            int | None,
+            Field(ge=0, le=settings.max_nesting_depth),
+        ] = None,
     ) -> None:
+        """Update source settings.
+    
+        Allows partial updates of a source associated with a subscription.
+        Only the parameters explicitly provided are modified.
         """
-        Update comment for a specific config in subscription by name.
-        
-        Args:
-            name: Subscription name
-            user_hash: Requesting user's hash
-            config_hash: Config hash to update comment for
-            comment: New comment text
-        """
-        # Verify ownership and get subscription
-        subscription = await self.get_subscription_by_name(name, user_hash)
-        
-        # Upsert comment
-        await self.comment_repo.upsert_comment(
-            subscription_token=subscription.token,
+    
+        # Verify ownership
+        subscription = await self.get_subscription(token, user_hash)
+        await self.check_source(subscription, config_hash)
+    
+        updated = await self._update_config(
+            token=token,
             config_hash=config_hash,
             comment=comment,
+            is_hidden=is_hidden,
+            max_depth=max_depth,
         )
-
-        
-        subscription.updated_at = utcnow()
-
-        await self.session.commit()
     
+        if updated:
+            source = await self.source_repo.get_by_pk(
+                token,
+                config_hash,
+            )
+    
+            if source:
+                await self.source_repo.update(
+                    source,
+                    updated_at=utcnow(),
+                )
+    
+            subscription.updated_at = utcnow()
+    
+            await self.session.commit()
+
+     
     # ═══════════════════════════════════════════════════════════════════════
     # Subscription Refresh (manual update of external URLs)
     # ═══════════════════════════════════════════════════════════════════════
@@ -868,28 +673,7 @@ class SubscriptionService:
             message=None
             )
 
-
-    async def refresh_subscription_by_name(
-        self,
-        name: str,
-        user_hash: str,
-    ) -> RefreshSubscriptionResponse:
-        """
-        Manually refresh all external URLs in subscription by name.
-        
-        Args:
-            name: Subscription name
-            user_hash: Requesting user's hash
-            
-        Returns:
-            Dict with refresh statistics
-        """
-        subscription = await self.get_subscription_by_name(name, user_hash)
-
-        subscription.updated_at = utcnow()
-
-        return await self.refresh_subscription(subscription.token, user_hash)
-    
+ 
     # ═══════════════════════════════════════════════════════════════════════
     # Internal Helpers
     # ═══════════════════════════════════════════════════════════════════════
@@ -1015,13 +799,15 @@ class SubscriptionService:
         if existing_source and existing_source.subscription_token == subscription_token:
             # Config already exists in this subscription
             # Only update comment if it changed
-            if comment:
-                await self.comment_repo.upsert_comment(
-                    subscription_token=subscription_token,
-                    config_hash=config_hash,
-                    comment=comment,
-                )
-            
+            updated = await self._update_config(
+                token=existing_source.subscription_token,
+                config_hash=config_hash,
+                comment=comment,
+                is_hidden=source.is_hidden,
+                max_depth=source.max_depth,
+            )
+
+            if updated:
                 # Update updated_at on the source
                 await self.source_repo.update(existing_source, updated_at=utcnow())
             
@@ -1095,8 +881,31 @@ class SubscriptionService:
         # Use URL hash as source ID
         source_id = get_url_hash(url)
         
+        existing_source = await self.source_repo.get_by_pk(
+            subscription_token,
+            source_id,
+        )
+        
+        if existing_source:
+            updated = await self._update_config(
+                token=subscription_token,
+                config_hash=source_id,
+                is_hidden=source.is_hidden,
+                max_depth=source.max_depth,
+            )
+        
+            if updated:
+                await self.source_repo.update(
+                    existing_source,
+                    updated_at=utcnow(),
+                )
+        
+            seen_ids.add(source_id)
+            return
+        
         if source_id in seen_ids:
-            return  # Skip duplicate
+            # дубликат в текущем запросе
+            return
 
         if not await self.source_repo.exists(id=source_id):
             from src.services.cache_service import CacheService, get_redis_client
@@ -1146,10 +955,6 @@ class SubscriptionService:
         if not sub:
             raise SubscriptionNotFoundError(url)
         
-        #if sub.user_hash != user_hash:
-        #    raise AuthorizationError(
-        #        "Cannot reference subscriptions from other users"
-        #    )
         
         # Check for circular references
         await self._check_circular_reference(
@@ -1161,7 +966,30 @@ class SubscriptionService:
         
         source_id = get_url_hash(url)
     
+        existing_source = await self.source_repo.get_by_pk(
+            subscription_token,
+            source_id,
+        )
+        
+        if existing_source:
+            updated = await self._update_config(
+                token=subscription_token,
+                config_hash=source_id,
+                is_hidden=source.is_hidden,
+                max_depth=source.max_depth,
+            )
+        
+            if updated:
+                await self.source_repo.update(
+                    existing_source,
+                    updated_at=utcnow(),
+                )
+        
+            seen_ids.add(source_id)
+            return
+        
         if source_id in seen_ids:
+            # дубликат в текущем запросе
             return
         
         await self.source_repo.create_source(
