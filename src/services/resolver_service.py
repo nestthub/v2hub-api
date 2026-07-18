@@ -195,6 +195,9 @@ class ResolverService:
         # Check current depth limit for the source
         if source.max_depth < depth:
             return
+
+        if depth == 0 and source.is_hidden:
+            return
         
         if source.source_type == SourceType.CONFIG.value:
             await self._process_config_source(
