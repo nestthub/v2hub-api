@@ -383,6 +383,7 @@ class SubscriptionService:
             subscription,
             sources,
             user_hash,
+            reset_indexes=True,
         )
     
         await self.session.commit()
@@ -683,6 +684,7 @@ class SubscriptionService:
         subscription: Subscription,
         sources: List[SourceCreateRequest],
         user_hash: str,
+        reset_indexes: bool = False,
     ) -> None:
         """
         Internal method to add sources to subscription.
@@ -708,7 +710,7 @@ class SubscriptionService:
             raise TooManySourcesError(current_count, max_sources)
         
         # Calculate order index for new sources
-        order_index = current_count
+        order_index = 0 if reset_indexes else current_count
         
         for source in sources:
             raw_source = source.data.strip()
@@ -805,6 +807,7 @@ class SubscriptionService:
                 comment=comment,
                 is_hidden=source.is_hidden,
                 max_depth=source.max_depth,
+                order_index=order_index,
             )
 
             if updated:
@@ -892,6 +895,7 @@ class SubscriptionService:
                 config_hash=source_id,
                 is_hidden=source.is_hidden,
                 max_depth=source.max_depth,
+                order_index=order_index,
             )
         
             if updated:
@@ -977,6 +981,7 @@ class SubscriptionService:
                 config_hash=source_id,
                 is_hidden=source.is_hidden,
                 max_depth=source.max_depth,
+                order_index=order_index,
             )
         
             if updated:

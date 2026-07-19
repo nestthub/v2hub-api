@@ -50,8 +50,8 @@ class SourceRepository(BaseRepository[Source]):
         config_hash: Optional[str] = None,
         internal_token: Optional[str] = None,
         external_url: Optional[str] = None,
-        is_hidden: bool = False,
-        max_depth: int = 3,
+        is_hidden: Optional[bool] = False,
+        max_depth: Optional[int] = 3,
         order_index: int = 0
     ) -> Source:
         """Create a new source."""
@@ -85,7 +85,9 @@ class SourceRepository(BaseRepository[Source]):
         subscription_token: str,
         config_hash: str,
         is_hidden: Optional[bool] = None,
-        max_depth: Optional[int] = None
+        max_depth: Optional[int] = None,
+        order_index: Optional[int] = None
+
     ) -> Optional[Source]:
         """Update a config."""
 
@@ -103,6 +105,9 @@ class SourceRepository(BaseRepository[Source]):
         
         if max_depth is not None:
             kwargs["max_depth"] = max_depth
+
+        if order_index is not None:
+            kwargs["order_index"] = order_index
 
 
         if kwargs:
