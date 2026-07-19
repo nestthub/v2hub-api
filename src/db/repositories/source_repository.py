@@ -75,7 +75,7 @@ class SourceRepository(BaseRepository[Source]):
         """Get specific config in a subscription."""
         stmt = select(Source).where(
             Source.subscription_token == subscription_token,
-            Source.config_hash == config_hash
+            Source.id == config_hash
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
