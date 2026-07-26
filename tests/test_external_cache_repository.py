@@ -1,8 +1,8 @@
-"""Tests for src.db.repositories.external_cache_repository.ExternalCacheRepository."""
+"""Tests for v2hub_api.db.repositories.external_cache_repository.ExternalCacheRepository."""
 
 import pytest
 
-from src.db.repositories.external_cache_repository import ExternalCacheRepository
+from v2hub_api.db.repositories.external_cache_repository import ExternalCacheRepository
 
 pytestmark = pytest.mark.asyncio
 
@@ -118,7 +118,9 @@ class TestDeleteAll:
 class TestModelProperties:
     async def test_has_content_true_when_content_present(self, db_session):
         repo = ExternalCacheRepository(db_session)
-        entry = await repo.create_or_update_cache(url_hash="h1", url="https://a.com", raw_content="data")
+        entry = await repo.create_or_update_cache(
+            url_hash="h1", url="https://a.com", raw_content="data"
+        )
         assert entry.has_content is True
 
     async def test_has_content_false_when_never_fetched(self, db_session):

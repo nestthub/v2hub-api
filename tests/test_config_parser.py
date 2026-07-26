@@ -1,10 +1,10 @@
-"""Tests for src.utils.config_parser."""
+"""Tests for v2hub_api.utils.config_parser."""
 
 import base64
 
 import pytest
 
-from src.utils.config_parser import (
+from v2hub_api.utils.config_parser import (
     decode_base64_subscription,
     deduplicate_configs,
     detect_protocol,
@@ -132,7 +132,9 @@ class TestGetUrlHash:
         assert get_url_hash("https://example.com/sub") == get_url_hash("https://example.com/sub")
 
     def test_strips_whitespace_before_hashing(self):
-        assert get_url_hash("  https://example.com/sub  ") == get_url_hash("https://example.com/sub")
+        assert get_url_hash("  https://example.com/sub  ") == get_url_hash(
+            "https://example.com/sub"
+        )
 
     def test_different_urls_differ(self):
         assert get_url_hash("https://a.com") != get_url_hash("https://b.com")
@@ -177,13 +179,7 @@ class TestParseSubscriptionContent:
         assert configs[1].startswith("trojan://")
 
     def test_skips_blank_lines_and_comments(self):
-        content = (
-            "# this is a comment\n"
-            "\n"
-            f"vless://{VALID_UUID}@host:443\n"
-            "   \n"
-            "# another comment\n"
-        )
+        content = f"# this is a comment\n\nvless://{VALID_UUID}@host:443\n   \n# another comment\n"
         configs = parse_subscription_content(content)
         assert configs == [f"vless://{VALID_UUID}@host:443"]
 
@@ -346,5 +342,7 @@ class TestNormalizeSource:
 
     def test_no_limit_when_max_comment_length_is_none(self):
         long_comment = "x" * 1000
-        result = normalize_source(f"https://example.com/sub#{long_comment}", max_comment_length=None)
+        result = normalize_source(
+            f"https://example.com/sub#{long_comment}", max_comment_length=None
+        )
         assert result.endswith(long_comment)

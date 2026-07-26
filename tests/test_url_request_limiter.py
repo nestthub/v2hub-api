@@ -1,4 +1,4 @@
-"""Tests for src.utils.url_request_limiter.URLRequestLimiter.
+"""Tests for v2hub_api.utils.url_request_limiter.URLRequestLimiter.
 
 Redis is replaced by a small in-memory fake implementing get/set/incr/
 expire/delete, so no real Redis instance is required.
@@ -6,7 +6,7 @@ expire/delete, so no real Redis instance is required.
 
 import pytest
 
-from src.utils.url_request_limiter import URLRequestLimiter
+from v2hub_api.utils.url_request_limiter import URLRequestLimiter
 
 pytestmark = pytest.mark.asyncio
 

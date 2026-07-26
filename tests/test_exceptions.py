@@ -1,9 +1,9 @@
-"""Tests for src.core.exceptions."""
+"""Tests for v2hub_api.core.exceptions."""
 
 from fastapi import HTTPException
 
-from src.core.enums import ErrorCode
-from src.core.exceptions import (
+from v2hub_api.core.enums import ErrorCode
+from v2hub_api.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
     CacheError,
@@ -36,9 +36,7 @@ class TestVPNSubscriptionErrorBase:
         assert str(exc) == "something failed"
 
     def test_with_error_code_and_details(self):
-        exc = VPNSubscriptionError(
-            "bad", error_code=ErrorCode.NOT_FOUND, details={"a": 1}
-        )
+        exc = VPNSubscriptionError("bad", error_code=ErrorCode.NOT_FOUND, details={"a": 1})
         assert exc.error_code is ErrorCode.NOT_FOUND
         assert exc.details == {"a": 1}
 

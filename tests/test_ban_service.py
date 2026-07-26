@@ -1,4 +1,4 @@
-"""Tests for src.services.ban_service.BanService.
+"""Tests for v2hub_api.services.ban_service.BanService.
 
 Redis is replaced by a small in-memory fake implementing just the
 operations BanService uses (get/set/delete/incr/expire/scan), so no real
@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from src.services.ban_service import BanService
+from v2hub_api.services.ban_service import BanService
 
 pytestmark = pytest.mark.asyncio
 
@@ -51,6 +51,7 @@ class FakeRedis:
 
     async def scan(self, cursor=0, match=None, count=100):
         import fnmatch
+
         pattern = match or "*"
         matched = [k for k in self._store if fnmatch.fnmatch(k, pattern)]
         return 0, matched

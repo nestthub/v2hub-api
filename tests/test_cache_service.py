@@ -1,4 +1,4 @@
-"""Tests for src.services.cache_service.CacheService.
+"""Tests for v2hub_api.services.cache_service.CacheService.
 
 Redis and the HTTP client are mocked; the PostgreSQL (L2) layer uses the
 real ExternalCacheRepository against an in-memory SQLite database.
@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.core.exceptions import ExternalFetchError
-from src.services.cache_service import CacheService
-from src.utils.config_parser import get_url_hash
+from v2hub_api.core.exceptions import ExternalFetchError
+from v2hub_api.services.cache_service import CacheService
+from v2hub_api.utils.config_parser import get_url_hash
 
 pytestmark = pytest.mark.asyncio
 
@@ -36,6 +36,7 @@ def _make_mock_redis():
 
     async def _scan(cursor, match=None, count=100):
         import fnmatch
+
         pattern = match or "*"
         matched = [k for k in store if fnmatch.fnmatch(k, pattern)]
         return 0, matched
@@ -159,7 +160,9 @@ class TestInvalidate:
         url = "https://example.com/sub"
         url_hash = get_url_hash(url)
 
-        await service.cache_repo.create_or_update_cache(url_hash=url_hash, url=url, raw_content="data")
+        await service.cache_repo.create_or_update_cache(
+            url_hash=url_hash, url=url, raw_content="data"
+        )
         redis._store[f"sub:{url_hash}"] = b"data"
 
         await service.invalidate(url)
@@ -191,7 +194,9 @@ class TestDeleteCache:
         url = "https://example.com/sub"
         url_hash = get_url_hash(url)
 
-        await service.cache_repo.create_or_update_cache(url_hash=url_hash, url=url, raw_content="data")
+        await service.cache_repo.create_or_update_cache(
+            url_hash=url_hash, url=url, raw_content="data"
+        )
         redis._store[f"sub:{url_hash}"] = b"data"
 
         await service.delete_cache(url_hash)
@@ -203,8 +208,12 @@ class TestDeleteCache:
 class TestClearAllCache:
     async def test_clears_db_entries(self, db_session):
         service = CacheService(db_session, redis_client=None)
-        await service.cache_repo.create_or_update_cache(url_hash="h1", url="https://a.com", raw_content="a")
-        await service.cache_repo.create_or_update_cache(url_hash="h2", url="https://b.com", raw_content="b")
+        await service.cache_repo.create_or_update_cache(
+            url_hash="h1", url="https://a.com", raw_content="a"
+        )
+        await service.cache_repo.create_or_update_cache(
+            url_hash="h2", url="https://b.com", raw_content="b"
+        )
 
         await service.clear_all_cache()
 

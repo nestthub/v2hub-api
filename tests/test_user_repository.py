@@ -1,8 +1,8 @@
-"""Tests for src.db.repositories.user_repository.UserRepository."""
+"""Tests for v2hub_api.db.repositories.user_repository.UserRepository."""
 
 import pytest
 
-from src.db.repositories.user_repository import UserRepository
+from v2hub_api.db.repositories.user_repository import UserRepository
 
 pytestmark = pytest.mark.asyncio
 
@@ -30,9 +30,7 @@ class TestCreateUser:
 
     async def test_defaults_is_active_true(self, db_session):
         repo = UserRepository(db_session)
-        user = await repo.create_user(
-            user_hash="h", user_id=2, api_token="t"
-        )
+        user = await repo.create_user(user_hash="h", user_id=2, api_token="t")
         assert user.is_active is True
 
 

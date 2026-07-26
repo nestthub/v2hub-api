@@ -3,12 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
-
-from celery import Task
-from sqlalchemy import select
+from typing import Any
 
 import src.db.session as db_session_module
+from celery import Task
+from sqlalchemy import select
 from src.core.enums import SourceType
 from src.db.models import Source
 from src.db.session import get_db_session
@@ -35,6 +34,7 @@ async def _session_scope():
     finally:
         await agen.aclose()
 
+
 async def _close_redis(redis: Any) -> None:
     close_method = getattr(redis, "aclose", None) or getattr(redis, "close", None)
     if callable(close_method):
@@ -44,7 +44,9 @@ async def _close_redis(redis: Any) -> None:
 
 
 async def _dispose_db_engine() -> None:
-    engine = getattr(db_session_module, "engine", None) or getattr(db_session_module, "async_engine", None)
+    engine = getattr(db_session_module, "engine", None) or getattr(
+        db_session_module, "async_engine", None
+    )
     if engine is None:
         return
 
@@ -92,6 +94,7 @@ async def _refresh_all_async() -> dict:
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
 
         async with SubscriptionHTTPClient() as http_client:
+
             async def limited_refresh(url: str) -> bool:
                 async with semaphore:
                     return await _refresh_one_url(url, redis, http_client)

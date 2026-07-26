@@ -1,20 +1,24 @@
-"""Tests for src.db.repositories.config_comment_repository.ConfigCommentRepository."""
+"""Tests for v2hub_api.db.repositories.config_comment_repository.ConfigCommentRepository."""
 
 import pytest
 
-from src.core.enums import SourceType
-from src.db.repositories.config_comment_repository import ConfigCommentRepository
-from src.db.repositories.proxy_config import ProxyConfigRepository
-from src.db.repositories.subscription_repository import SubscriptionRepository
-from src.db.repositories.user_repository import UserRepository
+from v2hub_api.core.enums import SourceType
+from v2hub_api.db.repositories.config_comment_repository import ConfigCommentRepository
+from v2hub_api.db.repositories.proxy_config import ProxyConfigRepository
+from v2hub_api.db.repositories.subscription_repository import SubscriptionRepository
+from v2hub_api.db.repositories.user_repository import UserRepository
 
 pytestmark = pytest.mark.asyncio
 
 
 async def _make_subscription_with_config(session, token="sub-1", config_hash="hash-1"):
     await UserRepository(session).create_user(user_hash="u1", user_id=1, api_token="tok")
-    await SubscriptionRepository(session).create_subscription(token=token, name="n1", user_hash="u1")
-    await ProxyConfigRepository(session).create_config(config_hash, "vless://uuid@host:443", "vless")
+    await SubscriptionRepository(session).create_subscription(
+        token=token, name="n1", user_hash="u1"
+    )
+    await ProxyConfigRepository(session).create_config(
+        config_hash, "vless://uuid@host:443", "vless"
+    )
 
 
 class TestUpsertComment:
@@ -63,7 +67,9 @@ class TestGetComment:
 class TestGetAllForSubscription:
     async def test_returns_all_comments(self, db_session):
         await UserRepository(db_session).create_user(user_hash="u1", user_id=1, api_token="tok")
-        await SubscriptionRepository(db_session).create_subscription(token="sub-1", name="n1", user_hash="u1")
+        await SubscriptionRepository(db_session).create_subscription(
+            token="sub-1", name="n1", user_hash="u1"
+        )
         proxy_repo = ProxyConfigRepository(db_session)
         await proxy_repo.create_config("hash-1", "vless://a@host:443", "vless")
         await proxy_repo.create_config("hash-2", "vless://b@host:443", "vless")
@@ -85,7 +91,9 @@ class TestGetAllForSubscription:
 class TestDeleteForSubscription:
     async def test_deletes_specific_config_comment(self, db_session):
         await UserRepository(db_session).create_user(user_hash="u1", user_id=1, api_token="tok")
-        await SubscriptionRepository(db_session).create_subscription(token="sub-1", name="n1", user_hash="u1")
+        await SubscriptionRepository(db_session).create_subscription(
+            token="sub-1", name="n1", user_hash="u1"
+        )
         proxy_repo = ProxyConfigRepository(db_session)
         await proxy_repo.create_config("hash-1", "vless://a@host:443", "vless")
         await proxy_repo.create_config("hash-2", "vless://b@host:443", "vless")
@@ -102,7 +110,9 @@ class TestDeleteForSubscription:
 
     async def test_deletes_all_when_no_config_hash_given(self, db_session):
         await UserRepository(db_session).create_user(user_hash="u1", user_id=1, api_token="tok")
-        await SubscriptionRepository(db_session).create_subscription(token="sub-1", name="n1", user_hash="u1")
+        await SubscriptionRepository(db_session).create_subscription(
+            token="sub-1", name="n1", user_hash="u1"
+        )
         proxy_repo = ProxyConfigRepository(db_session)
         await proxy_repo.create_config("hash-1", "vless://a@host:443", "vless")
         await proxy_repo.create_config("hash-2", "vless://b@host:443", "vless")
@@ -117,7 +127,9 @@ class TestDeleteForSubscription:
 
 
 class TestUniqueConstraint:
-    async def test_cannot_have_two_comments_for_same_sub_and_config_via_direct_create(self, db_session):
+    async def test_cannot_have_two_comments_for_same_sub_and_config_via_direct_create(
+        self, db_session
+    ):
         await _make_subscription_with_config(db_session)
         repo = ConfigCommentRepository(db_session)
 

@@ -1,7 +1,7 @@
 """
 Shared pytest fixtures and environment setup for the test suite.
 
-`src.core.config.Settings` requires several env vars (DATABASE_URL, REDIS_URL,
+`v2hub_api.core.config.Settings` requires several env vars (DATABASE_URL, REDIS_URL,
 SECRET_KEY, ADMIN_SECRET_KEY) to be present at import time. We set sane
 defaults here *before* anything under `src` gets imported, so that unit
 tests can exercise pure logic without needing a real Postgres/Redis
@@ -22,7 +22,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from src.db.models import Base
+from v2hub_api.db.models import Base
 
 
 @pytest_asyncio.fixture

@@ -1,4 +1,4 @@
-"""Tests for src.services.resolver_service.ResolverService.
+"""Tests for v2hub_api.services.resolver_service.ResolverService.
 
 These tests use an in-memory SQLite database for subscriptions/sources/
 comments (real repository behavior), and mock CacheService for external
@@ -9,14 +9,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.core.enums import SourceType
-from src.db.repositories.config_comment_repository import ConfigCommentRepository
-from src.db.repositories.proxy_config import ProxyConfigRepository
-from src.db.repositories.source_repository import SourceRepository
-from src.db.repositories.subscription_repository import SubscriptionRepository
-from src.db.repositories.user_repository import UserRepository
-from src.services.resolver_service import ResolverService
-from src.utils.config_parser import get_config_hash
+from v2hub_api.core.enums import SourceType
+from v2hub_api.db.repositories.config_comment_repository import ConfigCommentRepository
+from v2hub_api.db.repositories.proxy_config import ProxyConfigRepository
+from v2hub_api.db.repositories.source_repository import SourceRepository
+from v2hub_api.db.repositories.subscription_repository import SubscriptionRepository
+from v2hub_api.db.repositories.user_repository import UserRepository
+from v2hub_api.services.resolver_service import ResolverService
+from v2hub_api.utils.config_parser import get_config_hash
 
 pytestmark = pytest.mark.asyncio
 
@@ -56,7 +56,15 @@ async def _add_config_source(
     return config_hash
 
 
-async def _add_internal_source(session, subscription_token, target_token, source_id, is_hidden=False, max_depth=3, order_index=0):
+async def _add_internal_source(
+    session,
+    subscription_token,
+    target_token,
+    source_id,
+    is_hidden=False,
+    max_depth=3,
+    order_index=0,
+):
     await SourceRepository(session).create_source(
         source_id=source_id,
         subscription_token=subscription_token,
@@ -68,7 +76,9 @@ async def _add_internal_source(session, subscription_token, target_token, source
     )
 
 
-async def _add_external_source(session, subscription_token, url, source_id, is_hidden=False, max_depth=3, order_index=0):
+async def _add_external_source(
+    session, subscription_token, url, source_id, is_hidden=False, max_depth=3, order_index=0
+):
     await SourceRepository(session).create_source(
         source_id=source_id,
         subscription_token=subscription_token,
@@ -115,8 +125,12 @@ class TestResolveSimpleConfig:
 
     async def test_multiple_config_sources_ordered(self, db_session):
         await _make_user_and_subscription(db_session, "sub-1")
-        h1 = await _add_config_source(db_session, "sub-1", "vless://uuid1@host:443", source_id="s1", order_index=0)
-        h2 = await _add_config_source(db_session, "sub-1", "vless://uuid2@host:443", source_id="s2", order_index=1)
+        h1 = await _add_config_source(
+            db_session, "sub-1", "vless://uuid1@host:443", source_id="s1", order_index=0
+        )
+        h2 = await _add_config_source(
+            db_session, "sub-1", "vless://uuid2@host:443", source_id="s2", order_index=1
+        )
 
         resolver = ResolverService(db_session, _make_mock_cache())
         result = await resolver.resolve("sub-1")
@@ -148,10 +162,13 @@ class TestResolveWithComments:
 class TestResolveDeduplication:
     async def test_deduplicates_same_config_hash(self, db_session):
         await _make_user_and_subscription(db_session, "sub-1")
-        config_hash = await _add_config_source(db_session, "sub-1", "vless://uuid1@host:443", source_id="s1")
+        config_hash = await _add_config_source(
+            db_session, "sub-1", "vless://uuid1@host:443", source_id="s1"
+        )
 
         # Second source pointing to the *same* proxy config
-        from src.db.repositories.source_repository import SourceRepository as SR
+        from v2hub_api.db.repositories.source_repository import SourceRepository as SR
+
         await SR(db_session).create_source(
             source_id="s2",
             subscription_token="sub-1",
@@ -169,11 +186,13 @@ class TestResolveDeduplication:
 class TestResolveExternalUrl:
     async def test_resolves_configs_from_cached_content(self, db_session):
         await _make_user_and_subscription(db_session, "sub-1")
-        await _add_external_source(db_session, "sub-1", "https://example.com/sub", source_id="ext-1")
+        await _add_external_source(
+            db_session, "sub-1", "https://example.com/sub", source_id="ext-1"
+        )
 
-        cache = _make_mock_cache({
-            "https://example.com/sub": "vless://uuid1@host:443\ntrojan://pass@host2:443\n"
-        })
+        cache = _make_mock_cache(
+            {"https://example.com/sub": "vless://uuid1@host:443\ntrojan://pass@host2:443\n"}
+        )
         resolver = ResolverService(db_session, cache)
         result = await resolver.resolve("sub-1")
 
@@ -184,7 +203,9 @@ class TestResolveExternalUrl:
 
     async def test_no_cached_content_yields_nothing(self, db_session):
         await _make_user_and_subscription(db_session, "sub-1")
-        await _add_external_source(db_session, "sub-1", "https://example.com/sub", source_id="ext-1")
+        await _add_external_source(
+            db_session, "sub-1", "https://example.com/sub", source_id="ext-1"
+        )
 
         resolver = ResolverService(db_session, _make_mock_cache())  # empty cache
         result = await resolver.resolve("sub-1")
@@ -347,7 +368,7 @@ class TestResolveDescription:
         assert result.description == "Custom Description"
 
     async def test_falls_back_to_domain_when_no_description(self, db_session):
-        from src.core.config import settings
+        from v2hub_api.core.config import settings
 
         await _make_user_and_subscription(db_session, "sub-1")
         await _add_config_source(db_session, "sub-1", "vless://uuid1@host:443")

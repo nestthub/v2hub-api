@@ -1,4 +1,4 @@
-"""Tests for src.services.subscription_service.SubscriptionService.
+"""Tests for v2hub_api.services.subscription_service.SubscriptionService.
 
 Uses an in-memory SQLite database for all repository operations. Calls
 that would reach out to Redis/HTTP (via `CacheService`/`get_redis_client`,
@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.core.exceptions import (
+from v2hub_api.core.exceptions import (
     AuthorizationError,
     CircularReferenceError,
     DuplicateNameError,
@@ -22,10 +22,10 @@ from src.core.exceptions import (
     TooManySourcesError,
     TooManySubscriptionsError,
 )
-from src.core.enums import SourceType
-from src.db.repositories.user_repository import UserRepository
-from src.schemas import SourceCreateRequest
-from src.services.subscription_service import SubscriptionService
+from v2hub_api.core.enums import SourceType
+from v2hub_api.db.repositories.user_repository import UserRepository
+from v2hub_api.schemas import SourceCreateRequest
+from v2hub_api.services.subscription_service import SubscriptionService
 
 pytestmark = pytest.mark.asyncio
 
@@ -40,7 +40,7 @@ def _patch_external_fetching(monkeypatch):
     `CacheService.refresh`), and from SubscriptionHTTPClient's static URL
     validation, which are exercised as part of adding external sources.
     """
-    import src.services.cache_service as cache_service_module
+    import v2hub_api.services.cache_service as cache_service_module
 
     async def _fake_get_redis_client():
         return None
@@ -84,7 +84,7 @@ class TestCreateSubscription:
             await service.create_subscription(user_hash="u1", name="Dup")
 
     async def test_raises_too_many_subscriptions(self, db_session, monkeypatch):
-        from src.core.config import settings
+        from v2hub_api.core.config import settings
 
         monkeypatch.setattr(settings, "max_subscriptions_per_user", 1)
         await _make_user(db_session)
@@ -238,10 +238,12 @@ class TestAddSourcesConfig:
         sub = await service.create_subscription(user_hash="u1", name="Sub")
 
         with pytest.raises(InvalidConfigError):
-            await service.add_sources(sub.token, "u1", [SourceCreateRequest(data="not-a-valid-source")])
+            await service.add_sources(
+                sub.token, "u1", [SourceCreateRequest(data="not-a-valid-source")]
+            )
 
     async def test_too_many_sources_raises(self, db_session, monkeypatch):
-        from src.core.config import settings
+        from v2hub_api.core.config import settings
 
         monkeypatch.setattr(settings, "max_sources_per_subscription", 1)
         await _make_user(db_session)
@@ -254,7 +256,8 @@ class TestAddSourcesConfig:
 
         with pytest.raises(TooManySourcesError):
             await service.add_sources(
-                sub.token, "u1",
+                sub.token,
+                "u1",
                 [SourceCreateRequest(data="trojan://pass@host2:443")],
             )
 
@@ -291,7 +294,8 @@ class TestAddSourcesInternalToken:
         target = await service.create_subscription(user_hash="u1", name="Target")
         owner = await service.create_subscription(user_hash="u1", name="Owner")
 
-        from src.core.config import settings
+        from v2hub_api.core.config import settings
+
         internal_url = f"https://{settings.domain}/sub/{target.token}"
 
         updated = await service.add_sources(
@@ -307,7 +311,8 @@ class TestAddSourcesInternalToken:
         service = SubscriptionService(db_session)
         sub = await service.create_subscription(user_hash="u1", name="Sub")
 
-        from src.core.config import settings
+        from v2hub_api.core.config import settings
+
         internal_url = f"https://{settings.domain}/sub/{sub.token}"
 
         with pytest.raises(CircularReferenceError):
@@ -319,18 +324,20 @@ class TestAddSourcesInternalToken:
         sub_a = await service.create_subscription(user_hash="u1", name="A")
         sub_b = await service.create_subscription(user_hash="u1", name="B")
 
-        from src.core.config import settings
+        from v2hub_api.core.config import settings
 
         # a -> b
         await service.add_sources(
-            sub_a.token, "u1",
+            sub_a.token,
+            "u1",
             [SourceCreateRequest(data=f"https://{settings.domain}/sub/{sub_b.token}")],
         )
 
         # b -> a should be rejected (would create a cycle)
         with pytest.raises(CircularReferenceError):
             await service.add_sources(
-                sub_b.token, "u1",
+                sub_b.token,
+                "u1",
                 [SourceCreateRequest(data=f"https://{settings.domain}/sub/{sub_a.token}")],
             )
 
@@ -339,10 +346,12 @@ class TestAddSourcesInternalToken:
         service = SubscriptionService(db_session)
         sub = await service.create_subscription(user_hash="u1", name="Sub")
 
-        from src.core.config import settings
+        from v2hub_api.core.config import settings
+
         with pytest.raises(SubscriptionNotFoundError):
             await service.add_sources(
-                sub.token, "u1",
+                sub.token,
+                "u1",
                 [SourceCreateRequest(data=f"https://{settings.domain}/sub/does-not-exist")],
             )
 

@@ -1,8 +1,8 @@
-"""Tests for src.core.enums."""
+"""Tests for v2hub_api.core.enums."""
 
 import pytest
 
-from src.core.enums import ErrorCode, ProxyProtocol, SourceType
+from v2hub_api.core.enums import ErrorCode, ProxyProtocol, SourceType
 
 
 class TestSourceType:

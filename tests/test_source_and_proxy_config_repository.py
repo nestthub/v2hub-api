@@ -2,11 +2,11 @@
 
 import pytest
 
-from src.core.enums import SourceType
-from src.db.repositories.proxy_config import ProxyConfigRepository
-from src.db.repositories.source_repository import SourceRepository
-from src.db.repositories.subscription_repository import SubscriptionRepository
-from src.db.repositories.user_repository import UserRepository
+from v2hub_api.core.enums import SourceType
+from v2hub_api.db.repositories.proxy_config import ProxyConfigRepository
+from v2hub_api.db.repositories.source_repository import SourceRepository
+from v2hub_api.db.repositories.subscription_repository import SubscriptionRepository
+from v2hub_api.db.repositories.user_repository import UserRepository
 
 pytestmark = pytest.mark.asyncio
 
@@ -26,7 +26,9 @@ async def _make_subscription(session, token="sub-1", user_hash="u1"):
     )
 
 
-async def _make_proxy_config(session, config_hash="hash-abc", config_data="vless://uuid@host:443", protocol="vless"):
+async def _make_proxy_config(
+    session, config_hash="hash-abc", config_data="vless://uuid@host:443", protocol="vless"
+):
     return await ProxyConfigRepository(session).create_config(
         config_hash=config_hash, config_data=config_data, protocol=protocol
     )
@@ -123,13 +125,17 @@ class TestSourceRepositoryQueries:
         repo = SourceRepository(db_session)
 
         await repo.create_source(
-            source_id="s2", subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://b.com",
+            source_id="s2",
+            subscription_token="sub-1",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://b.com",
             order_index=2,
         )
         await repo.create_source(
-            source_id="s1", subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://a.com",
+            source_id="s1",
+            subscription_token="sub-1",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://a.com",
             order_index=1,
         )
 
@@ -140,8 +146,10 @@ class TestSourceRepositoryQueries:
         await _make_subscription(db_session)
         repo = SourceRepository(db_session)
         await repo.create_source(
-            source_id="s1", subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://a.com",
+            source_id="s1",
+            subscription_token="sub-1",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://a.com",
         )
 
         ids = await repo.get_existing_ids("sub-1")
@@ -152,8 +160,10 @@ class TestSourceRepositoryQueries:
         await _make_proxy_config(db_session)
         repo = SourceRepository(db_session)
         await repo.create_source(
-            source_id="hash-abc", subscription_token="sub-1",
-            source_type=SourceType.CONFIG.value, config_hash="hash-abc",
+            source_id="hash-abc",
+            subscription_token="sub-1",
+            source_type=SourceType.CONFIG.value,
+            config_hash="hash-abc",
         )
 
         found = await repo.get_config("sub-1", "hash-abc")
@@ -172,14 +182,21 @@ class TestSourceRepositoryUpsertConfig:
         await _make_proxy_config(db_session)
         repo = SourceRepository(db_session)
         await repo.create_source(
-            source_id="hash-abc", subscription_token="sub-1",
-            source_type=SourceType.CONFIG.value, config_hash="hash-abc",
-            is_hidden=False, max_depth=3, order_index=0,
+            source_id="hash-abc",
+            subscription_token="sub-1",
+            source_type=SourceType.CONFIG.value,
+            config_hash="hash-abc",
+            is_hidden=False,
+            max_depth=3,
+            order_index=0,
         )
 
         updated = await repo.upsert_config(
-            subscription_token="sub-1", config_hash="hash-abc",
-            is_hidden=True, max_depth=1, order_index=5,
+            subscription_token="sub-1",
+            config_hash="hash-abc",
+            is_hidden=True,
+            max_depth=1,
+            order_index=5,
         )
 
         assert updated.is_hidden is True
@@ -200,8 +217,10 @@ class TestSourceRepositoryUpsertConfig:
         await _make_proxy_config(db_session)
         repo = SourceRepository(db_session)
         await repo.create_source(
-            source_id="hash-abc", subscription_token="sub-1",
-            source_type=SourceType.CONFIG.value, config_hash="hash-abc",
+            source_id="hash-abc",
+            subscription_token="sub-1",
+            source_type=SourceType.CONFIG.value,
+            config_hash="hash-abc",
         )
 
         result = await repo.upsert_config(subscription_token="sub-1", config_hash="hash-abc")
@@ -213,12 +232,16 @@ class TestSourceRepositoryDelete:
         await _make_subscription(db_session)
         repo = SourceRepository(db_session)
         await repo.create_source(
-            source_id="s1", subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://a.com",
+            source_id="s1",
+            subscription_token="sub-1",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://a.com",
         )
         await repo.create_source(
-            source_id="s2", subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://b.com",
+            source_id="s2",
+            subscription_token="sub-1",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://b.com",
         )
 
         deleted_count = await repo.delete_all_for_subscription("sub-1")
@@ -229,12 +252,16 @@ class TestSourceRepositoryDelete:
         await _make_subscription(db_session)
         repo = SourceRepository(db_session)
         await repo.create_source(
-            source_id="s1", subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://a.com",
+            source_id="s1",
+            subscription_token="sub-1",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://a.com",
         )
         await repo.create_source(
-            source_id="s2", subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://b.com",
+            source_id="s2",
+            subscription_token="sub-1",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://b.com",
         )
 
         deleted_count = await repo.delete_by_ids("sub-1", ["s1"])
@@ -250,8 +277,10 @@ class TestSourceRepositoryDelete:
 
         # sub-2 references sub-1 internally
         await repo.create_source(
-            source_id="ref", subscription_token="sub-2",
-            source_type=SourceType.INTERNAL_TOKEN.value, internal_token="sub-1",
+            source_id="ref",
+            subscription_token="sub-2",
+            source_type=SourceType.INTERNAL_TOKEN.value,
+            internal_token="sub-1",
         )
 
         await repo.delete_internal_references("sub-1")
@@ -269,16 +298,22 @@ class TestSourceRepositoryGetUniqueIds:
 
         # "dup" appears in two different subscriptions -> not unique
         await repo.create_source(
-            source_id="dup", subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://a.com",
+            source_id="dup",
+            subscription_token="sub-1",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://a.com",
         )
         await repo.create_source(
-            source_id="dup", subscription_token="sub-2",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://b.com",
+            source_id="dup",
+            subscription_token="sub-2",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://b.com",
         )
         await repo.create_source(
-            source_id="unique-id", subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://c.com",
+            source_id="unique-id",
+            subscription_token="sub-1",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://c.com",
         )
 
         unique_ids = await repo.get_unique_ids({"dup", "unique-id"})
@@ -292,8 +327,10 @@ class TestCascadeDeleteSubscription:
         sub_repo = SubscriptionRepository(db_session)
 
         await source_repo.create_source(
-            source_id="s1", subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value, external_url="https://a.com",
+            source_id="s1",
+            subscription_token="sub-1",
+            source_type=SourceType.EXTERNAL_URL.value,
+            external_url="https://a.com",
         )
 
         sub = await sub_repo.get_by_token("sub-1")

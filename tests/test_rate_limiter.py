@@ -1,4 +1,4 @@
-"""Tests for src.utils.rate_limiter.RateLimiter.
+"""Tests for v2hub_api.utils.rate_limiter.RateLimiter.
 
 Redis is replaced by a small in-memory fake that implements `eval` with
 the same sliding-window semantics as the real Lua script (so we don't
@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from src.utils.rate_limiter import RateLimitConfig, RateLimiter
+from v2hub_api.utils.rate_limiter import RateLimitConfig, RateLimiter
 
 pytestmark = pytest.mark.asyncio
 
@@ -43,6 +43,7 @@ class FakeRedisSlidingWindow:
 
     async def keys(self, pattern):
         import fnmatch
+
         return [k for k in self._windows if fnmatch.fnmatch(k, pattern)]
 
 
@@ -71,9 +72,7 @@ def _make_limiter(fake_redis, whitelisted_ips=None, **config_overrides):
 
 class TestCheckPublicLimit:
     async def test_allows_requests_under_limit(self, fake_redis):
-        limiter = _make_limiter(
-            fake_redis, public_requests_per_second=3, public_window_seconds=1
-        )
+        limiter = _make_limiter(fake_redis, public_requests_per_second=3, public_window_seconds=1)
 
         for _ in range(3):
             allowed, error = await limiter.check_public_limit("1.2.3.4")
@@ -81,9 +80,7 @@ class TestCheckPublicLimit:
             assert error is None
 
     async def test_blocks_requests_over_limit(self, fake_redis):
-        limiter = _make_limiter(
-            fake_redis, public_requests_per_second=2, public_window_seconds=1
-        )
+        limiter = _make_limiter(fake_redis, public_requests_per_second=2, public_window_seconds=1)
 
         await limiter.check_public_limit("1.2.3.4")
         await limiter.check_public_limit("1.2.3.4")
@@ -94,9 +91,7 @@ class TestCheckPublicLimit:
         assert "Rate limit exceeded" in error
 
     async def test_different_ips_tracked_independently(self, fake_redis):
-        limiter = _make_limiter(
-            fake_redis, public_requests_per_second=1, public_window_seconds=1
-        )
+        limiter = _make_limiter(fake_redis, public_requests_per_second=1, public_window_seconds=1)
 
         allowed1, _ = await limiter.check_public_limit("1.1.1.1")
         allowed2, _ = await limiter.check_public_limit("2.2.2.2")

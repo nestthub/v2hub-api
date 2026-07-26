@@ -1,9 +1,9 @@
-"""Tests for src.services.user_service.UserService."""
+"""Tests for v2hub_api.services.user_service.UserService."""
 
 import pytest
 
-from src.core.exceptions import AuthenticationError, NotFoundError, ValidationError
-from src.services.user_service import UserService
+from v2hub_api.core.exceptions import AuthenticationError, NotFoundError, ValidationError
+from v2hub_api.services.user_service import UserService
 
 pytestmark = pytest.mark.asyncio
 

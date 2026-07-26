@@ -8,7 +8,7 @@ wheels/
 data
 requirements.txt
 *.htpasswd
-conf-test.d/
+conf.d/
 
 
 # Virtual environments

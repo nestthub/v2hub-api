@@ -1,9 +1,9 @@
-"""Tests for src.utils.url_validator (SSRF protection)."""
+"""Tests for v2hub_api.utils.url_validator (SSRF protection)."""
 
 import pytest
 
-from src.core.exceptions import InvalidURLError
-from src.utils.url_validator import (
+from v2hub_api.core.exceptions import InvalidURLError
+from v2hub_api.utils.url_validator import (
     extract_hostname,
     is_internal,
     is_private_ip,

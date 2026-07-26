@@ -1,9 +1,9 @@
-"""Tests for src.db.repositories.subscription_repository.SubscriptionRepository."""
+"""Tests for v2hub_api.db.repositories.subscription_repository.SubscriptionRepository."""
 
 import pytest
 
-from src.db.repositories.subscription_repository import SubscriptionRepository
-from src.db.repositories.user_repository import UserRepository
+from v2hub_api.db.repositories.subscription_repository import SubscriptionRepository
+from v2hub_api.db.repositories.user_repository import UserRepository
 
 pytestmark = pytest.mark.asyncio
 

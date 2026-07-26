@@ -89,9 +89,19 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      # Consumed by nginx's built-in envsubst-on-templates entrypoint
+      # (renders nginx/conf.d.templates/*.template -> /etc/nginx/conf.d/*.conf
+      # on container start). Values come from .env — see .env.example.
+      DOMAIN: ${DOMAIN}
+      # Comma-separated list of IPs exempt from rate limiting, e.g.
+      # "1.1.1.1,2.2.2.2". Turned into a proper nginx `map` block by
+      # nginx/entrypoint/10-generate-limit-key-map.sh at container start.
+      TRUSTED_NOLIMIT_IPS: ${TRUSTED_NOLIMIT_IPS:-}
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/entrypoint/10-generate-limit-key-map.sh:/docker-entrypoint.d/10-generate-limit-key-map.sh:ro
       - ./nginx/grafana.htpasswd:/etc/nginx/grafana.htpasswd:ro
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt
@@ -164,7 +174,7 @@ services:
       #    environment:
       #      - GF_SECURITY_ADMIN_USER=admin
       #      - GF_SECURITY_ADMIN_PASSWORD=admin
-      #      - GF_SERVER_ROOT_URL=https://v2hub.link/grafana/
+      #      - GF_SERVER_ROOT_URL=https://${DOMAIN}/grafana/
       #      - GF_SERVER_SERVE_FROM_SUB_PATH=true
       #    volumes:
       #      - ./monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml

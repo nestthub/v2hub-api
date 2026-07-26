@@ -1,4 +1,4 @@
-"""Tests for src.services.whitelist_service.WhitelistService.
+"""Tests for v2hub_api.services.whitelist_service.WhitelistService.
 
 Redis is replaced by a small in-memory fake implementing the set/hash
 operations WhitelistService uses, so no real Redis instance is required.
@@ -6,7 +6,7 @@ operations WhitelistService uses, so no real Redis instance is required.
 
 import pytest
 
-from src.services.whitelist_service import WhitelistService
+from v2hub_api.services.whitelist_service import WhitelistService
 
 pytestmark = pytest.mark.asyncio
 
@@ -41,9 +41,7 @@ class FakeRedis:
     async def hset(self, key, mapping):
         h = self._hashes.setdefault(key, {})
         for k, v in mapping.items():
-            h[k.encode() if isinstance(k, str) else k] = (
-                v.encode() if isinstance(v, str) else v
-            )
+            h[k.encode() if isinstance(k, str) else k] = v.encode() if isinstance(v, str) else v
         return len(mapping)
 
     async def hgetall(self, key):
