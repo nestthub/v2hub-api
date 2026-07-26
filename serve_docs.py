@@ -4,12 +4,11 @@ Simple HTTP server for viewing documentation.
 Run this script and open http://localhost:8080 in your browser.
 """
 
-from functools import partial
-from pathlib import Path
 import http.server
 import socketserver
 import sys
-
+from functools import partial
+from pathlib import Path
 
 docs_dir = Path(__file__).parent / "docs"
 if not docs_dir.exists():
@@ -42,7 +41,7 @@ def main():
     print("=" * 70)
     print(f"\n📚 Serving documentation from: {docs_dir}")
     print(f"🌐 Open your browser and navigate to: http://localhost:{PORT}")
-    print(f"\n💡 Press Ctrl+C to stop the server\n")
+    print("\n💡 Press Ctrl+C to stop the server\n")
     print("=" * 70)
 
     handler = partial(CustomHTTPRequestHandler, directory=str(docs_dir))
