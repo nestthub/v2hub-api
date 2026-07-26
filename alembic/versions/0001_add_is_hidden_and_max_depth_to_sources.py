@@ -1,7 +1,7 @@
 """add is_hidden and max_depth to sources
 
 Revision ID: 0001
-Revises: ba8245a056b5
+Revises: 0000
 Create Date: 2026-07-16 00:00:00.000000
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0001"
-down_revision: str | Sequence[str] | None = "ba8245a056b5"
+down_revision: str | Sequence[str] | None = "0000"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
