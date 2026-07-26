@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from celery import Celery
-from src.core.config import settings
+from v2hub_api.core.config import settings
 
 app = Celery(
     "v2hubapi",

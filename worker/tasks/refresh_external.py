@@ -5,14 +5,14 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
-import src.db.session as db_session_module
+import v2hub_api.db.session as db_session_module
 from celery import Task
 from sqlalchemy import select
-from src.core.enums import SourceType
-from src.db.models import Source
-from src.db.session import get_db_session
-from src.services.cache_service import CacheService, get_redis_client
-from src.utils.http_client import SubscriptionHTTPClient
+from v2hub_api.core.enums import SourceType
+from v2hub_api.db.models import Source
+from v2hub_api.db.session import get_db_session
+from v2hub_api.services.cache_service import CacheService, get_redis_client
+from v2hub_api.utils.http_client import SubscriptionHTTPClient
 from worker.celery_app import app as celery_app
 
 logger = logging.getLogger(__name__)

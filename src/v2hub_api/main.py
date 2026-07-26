@@ -15,11 +15,13 @@ import re
 import time
 from collections.abc import AsyncGenerator, Awaitable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, cast
 
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 from prometheus_client.openmetrics.exposition import (
     CONTENT_TYPE_LATEST,
@@ -41,6 +43,8 @@ from v2hub_api.middlewares.security_headers_middleware import SecurityHeadersMid
 from v2hub_api.services.cache_service import close_redis_client, get_redis_client
 from v2hub_api.utils.http_client import close_http_client
 
+from . import __version__
+
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -48,6 +52,16 @@ logging.basicConfig(
     format=settings.log_format,
 )
 logger = logging.getLogger(__name__)
+
+
+# ─── Static assets (landing page + docs site) ─────────────────────────────────
+
+# main.py lives at <repo_root>/src/v2hub_api/main.py, both locally and
+# inside the Docker image (Dockerfile does `WORKDIR /app` + `COPY . .`),
+# so parents[2] resolves to <repo_root> in both environments.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+HOME_HTML_PATH = REPO_ROOT / "home.html"
+DOCS_DIR = REPO_ROOT / "docs"
 
 
 # ─── Prometheus metrics ───────────────────────────────────────────────────────
@@ -59,7 +73,7 @@ APP_INFO = Gauge(
     "FastAPI application info",
     ["app_name", "version"],
 )
-APP_INFO.labels(app_name=APP_NAME, version="1.0.0").set(1)
+APP_INFO.labels(app_name=APP_NAME, version=__version__).set(1)
 
 HTTP_REQUESTS_TOTAL = Counter(
     "fastapi_requests_total",
@@ -98,6 +112,7 @@ HTTP_EXCEPTIONS_TOTAL = Counter(
 # Порядок важен — более специфичные паттерны первыми
 PATH_PATTERNS = [
     (re.compile(r"^/sub/[^/]+$"), "/sub/{token}"),
+    (re.compile(r"^/site-docs(/.*)?$"), "/site-docs/*"),
     (re.compile(r"^/api/v1/subs/[^/]+/sources$"), "/api/v1/subs/{token}/sources"),
     (re.compile(r"^/api/v1/subs/[^/]+/comments$"), "/api/v1/subs/{token}/comments"),
     (re.compile(r"^/api/v1/subs/[^/]+/refresh$"), "/api/v1/subs/{token}/refresh"),
@@ -248,6 +263,46 @@ def create_app() -> FastAPI:
         dependencies=[Depends(check_internal_rate_limit)],
     )
     app.include_router(public.router, dependencies=[Depends(check_public_rate_limit)])
+
+    @app.get("/", include_in_schema=False)
+    async def home() -> Response:
+        """Serve the project landing page."""
+        if not HOME_HTML_PATH.is_file():
+            logger.warning(f"home.html not found at {HOME_HTML_PATH}")
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"error": "not_found", "message": "Landing page is not available."},
+            )
+        return FileResponse(HOME_HTML_PATH, media_type="text/html")
+
+    README_PATH = REPO_ROOT / "README.md"
+
+    @app.get("/site-docs/README.md", include_in_schema=False)
+    async def site_docs_readme() -> Response:
+        """
+        Serve the repository's README.md under /site-docs/.
+
+        docs/index.html fetches README.md, API_DOCUMENTATION.md, and
+        TYPES.md as sibling files (relative fetch()), but only the latter
+        two actually live in docs/ — README.md lives at the repo root.
+        This route bridges that gap without needing to duplicate the file.
+        """
+        if not README_PATH.is_file():
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"error": "not_found", "message": "README.md is not available."},
+            )
+        return FileResponse(README_PATH, media_type="text/markdown")
+
+    # Serve docs/ (project documentation site, e.g. docs/index.html linked
+    # from the landing page) as static files at /site-docs. Mounted under a
+    # dedicated path — not /docs — so it never collides with the Scalar API
+    # reference registered at /docs when settings.debug is enabled.
+    #
+    # NOTE: registered after the /site-docs/README.md route above, so that
+    # explicit route takes precedence over this catch-all mount.
+    if DOCS_DIR.is_dir():
+        app.mount("/site-docs", StaticFiles(directory=DOCS_DIR, html=True), name="site-docs")
 
     @app.get("/health")
     async def health() -> JSONResponse:

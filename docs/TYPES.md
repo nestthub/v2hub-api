@@ -1208,22 +1208,4 @@ IPAddress = Annotated[str, Field(min_length=7, max_length=45)]
 }
 ```
 
----
-
-## OpenAPI Schema
-
-The API automatically generates OpenAPI 3.1.0 schema available at `/openapi.json`.
-
-**Key features**:
-
-- Full request/response schemas
-- Validation rules and constraints
-- Example values for all fields
-- Error response schemas
-- Security scheme definitions
-
-Access at: `https://api.example.com/openapi.json`
-
----
-
 **Last Updated**: July 16, 2026

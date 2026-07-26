@@ -9,6 +9,36 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.types import ASGIApp
 
+# Paths that serve actual HTML pages (landing page + docs site) rather than
+# JSON API responses. These need a CSP that allows the external CDN scripts/
+# fonts and inline event handlers those pages use — the strict
+# "default-src 'none'" API policy would (and did) break them completely:
+# every <script>, onclick=, external stylesheet, and even favicon request
+# gets silently blocked by the browser under that policy.
+_HTML_PAGE_PREFIXES = ("/site-docs",)
+_HTML_PAGE_EXACT_PATHS = ("/",)
+
+_API_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+_HTML_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
+def _is_html_page(path: str) -> bool:
+    """Check whether a request path serves an HTML page rather than the API."""
+    if path in _HTML_PAGE_EXACT_PATHS:
+        return True
+    return any(path.startswith(prefix) for prefix in _HTML_PAGE_PREFIXES)
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
@@ -19,7 +49,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     - X-Frame-Options: Prevent clickjacking
     - X-XSS-Protection: Enable XSS filter in older browsers
     - Strict-Transport-Security: Force HTTPS
-    - Content-Security-Policy: Restrict resource loading
+    - Content-Security-Policy: Restrict resource loading (strict for the
+      API, relaxed — but still locked down beyond 'self' plus a couple of
+      explicitly trusted CDNs — for the landing page / docs site)
     - Referrer-Policy: Control referrer information
     - Permissions-Policy: Control browser features
     """
@@ -87,9 +119,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         # Content Security Policy
         if self.csp_enabled:
-            # Strict CSP for API (no inline scripts, no external resources)
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-            )
+            if _is_html_page(request.url.path):
+                # Relaxed CSP for HTML pages that load external CDN
+                # scripts/fonts and use inline <script>/onclick handlers
+                # (home.html, docs/index.html served under /site-docs).
+                response.headers["Content-Security-Policy"] = _HTML_CSP
+            else:
+                # Strict CSP for the JSON API (no inline scripts, no
+                # external resources).
+                response.headers["Content-Security-Policy"] = _API_CSP
 
         return response
