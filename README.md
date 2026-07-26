@@ -1,4 +1,4 @@
-# VPN Subscription API
+# v2hub-api
 
 > **Professional VPN subscription management and aggregation system**
 
@@ -64,8 +64,8 @@ A production-ready FastAPI-based service for managing, aggregating, and serving 
 
 ```bash
 # Clone the repository
-git clone https://github.com/nestthub/v2hub-server.git
-cd v2hub-server
+git clone https://github.com/nestthub/v2hub-api.git
+cd v2hub-api
 
 # Create environment file
 cp .env.example .env
@@ -93,7 +93,7 @@ pip install -e .
 alembic upgrade head
 
 # Start the API server
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn v2hub_api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Start Celery worker (in another terminal)
 celery -A worker.celery_app worker --loglevel=info
@@ -153,62 +153,74 @@ celery -A worker.celery_app beat --loglevel=info
 ### Project Structure
 
 ```
-v2hub-server/
+v2hub-api/
 ├── src/
-│   ├── api/
-│   │   ├── dependencies.py          # FastAPI dependencies
-│   │   └── endpoints/
-│   │       ├── public.py            # Public endpoints (/sub/{token})
-│   │       ├── subscriptions.py     # Subscription CRUD
-│   │       └── admin.py             # Admin management
-│   ├── core/
-│   │   ├── config.py                # Settings & configuration
-│   │   ├── enums.py                 # Enumerations
-│   │   └── exceptions.py            # Custom exceptions
-│   ├── db/
-│   │   ├── models/                  # SQLAlchemy models
-│   │   ├── repositories/            # Data access layer
-│   │   └── session.py               # Database connection
-│   ├── schemas/
-│   │   ├── base_models/             # Pydantic models (user-facing)
-│   │   └── admin_models/            # Pydantic models (admin)
-│   ├── services/
-│   │   ├── subscription_service.py  # Business logic
-│   │   ├── resolver_service.py      # Subscription resolution
-│   │   ├── cache_service.py         # Redis caching
-│   │   ├── user_service.py          # User management
-│   │   ├── ban_service.py           # IP banning
-│   │   └── whitelist_service.py     # IP whitelisting
-│   ├── middlewares/
-│   │   ├── rate_limit_middleware.py # Rate limiting
-│   │   └── security_headers_middleware.py  # Security headers
-│   ├── utils/
-│   │   ├── config_parser.py         # Proxy config parsing
-│   │   ├── http_client.py           # HTTP client wrapper
-│   │   └── url_validator.py         # URL validation
-│   └── main.py                      # Application entry point
+│   └── v2hub_api/
+│       ├── api/
+│       │   ├── dependencies.py          # FastAPI dependencies
+│       │   └── endpoints/
+│       │       ├── public.py            # Public endpoints (/sub/{token})
+│       │       ├── subscriptions.py     # Subscription CRUD
+│       │       └── admin.py             # Admin management
+│       ├── core/
+│       │   ├── config.py                # Settings & configuration
+│       │   ├── enums.py                 # Enumerations
+│       │   └── exceptions.py            # Custom exceptions
+│       ├── db/
+│       │   ├── models/                  # SQLAlchemy models
+│       │   ├── repositories/            # Data access layer
+│       │   └── session.py               # Database connection
+│       ├── schemas/
+│       │   ├── base_models/             # Pydantic models (user-facing)
+│       │   └── admin_models/            # Pydantic models (admin)
+│       ├── services/
+│       │   ├── subscription_service.py  # Business logic
+│       │   ├── resolver_service.py      # Subscription resolution
+│       │   ├── cache_service.py         # Redis caching
+│       │   ├── user_service.py          # User management
+│       │   ├── ban_service.py           # IP banning
+│       │   └── whitelist_service.py     # IP whitelisting
+│       ├── middlewares/
+│       │   ├── rate_limit_middleware.py # Rate limiting
+│       │   └── security_headers_middleware.py  # Security headers
+│       ├── utils/
+│       │   ├── config_parser.py         # Proxy config parsing
+│       │   ├── http_client.py           # HTTP client wrapper
+│       │   ├── rate_limiter.py          # Redis-based rate limiting
+│       │   ├── url_request_limiter.py   # External URL fetch limiting
+│       │   └── url_validator.py         # URL / SSRF validation
+│       ├── py.typed
+│       └── main.py                      # Application entry point
 ├── worker/
-│   ├── celery_app.py                # Celery configuration
-│   └── tasks/                       # Background tasks
+│   ├── celery_app.py                    # Celery configuration
+│   └── tasks/                           # Background tasks
 ├── alembic/
-│   └── versions/                    # Database migrations
+│   ├── env.py
+│   └── versions/                        # Database migrations
 ├── monitoring/
 │   ├── alloy/
-│   │   └── config.alloy             # Grafana Alloy log pipeline
+│   │   └── config.alloy                 # Grafana Alloy log pipeline
 │   ├── grafana/
-│   │   └── datasources.yml          # Auto-provisioned datasources
-│   ├── prometheus.yml               # Scrape config
-│   └── loki.yml                     # Log storage config
+│   │   └── datasources.yml              # Auto-provisioned datasources
+│   ├── prometheus.yml                   # Scrape config
+│   └── loki.yml                         # Log storage config
 ├── nginx/
+│   ├── nginx.conf
 │   └── conf.d/
-│       └── api.conf                 # Nginx configuration
-├── tests/                           # Test suite
-├── docker-compose.yml               # Docker orchestration
-├── Dockerfile                       # Container definition
-├── pyproject.toml                   # Project dependencies
-├── alembic.ini                      # Alembic configuration
-├── README.md                        # This file
-└── API_DOCUMENTATION.md             # Complete API reference
+│       └── api.conf                     # Nginx configuration
+├── certbot-renew/
+│   └── Dockerfile                       # SSL certificate renewal
+├── docs/
+│   ├── API_DOCUMENTATION.md             # Complete API reference
+│   ├── TYPES.md                         # Type reference
+│   └── index.html
+├── tests/                                # Test suite
+├── serve_docs.py                         # Local docs server
+├── docker-compose.yml                    # Docker orchestration
+├── Dockerfile                            # Container definition
+├── pyproject.toml                        # Project dependencies
+├── alembic.ini                           # Alembic configuration
+└── README.md                             # This file
 ```
 
 ### Data Flow
@@ -263,8 +275,8 @@ Client Request
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/nestthub/v2hub-server.git
-   cd v2hub-server
+   git clone https://github.com/nestthub/v2hub-api.git
+   cd v2hub-api
    ```
 
 2. **Configure environment**:
@@ -297,8 +309,8 @@ Client Request
 1. **Clone and setup**:
 
    ```bash
-   git clone https://github.com/nestthub/v2hub-server.git
-   cd v2hub-server
+   git clone https://github.com/nestthub/v2hub-api.git
+   cd v2hub-api
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
@@ -330,7 +342,7 @@ Client Request
 
    ```bash
    # Terminal 1: API
-   uvicorn src.main:app --reload
+   uvicorn v2hub_api.main:app --reload
 
    # Terminal 2: Celery Worker
    celery -A worker.celery_app worker --loglevel=info
@@ -442,7 +454,13 @@ LOG_FORMAT=%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 ## 📚 API Documentation
 
-Comprehensive API documentation is available in [API_DOCUMENTATION.md](./API_DOCUMENTATION.md).
+Comprehensive API documentation is available in [docs/API_DOCUMENTATION.md](./docs/API_DOCUMENTATION.md), with additional type reference in [docs/TYPES.md](./docs/TYPES.md).
+
+A static rendering of the docs can also be served locally:
+
+```bash
+python serve_docs.py
+```
 
 ### Quick Reference
 
@@ -759,8 +777,8 @@ pytest
 # Run with coverage
 pytest --cov=src --cov-report=html
 
-# Run specific test file
-pytest tests/test_subscriptions.py
+# Run a specific test file
+pytest tests/test_smoke.py
 
 # Run with verbose output
 pytest -v
@@ -991,9 +1009,9 @@ Built with:
 
 ## 📞 Support
 
-- **Documentation**: [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)
-- **Issues**: [GitHub Issues](https://github.com/nestthub/v2hub-server/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/nestthub/v2hub-server/discussions)
+- **Documentation**: [docs/API_DOCUMENTATION.md](./docs/API_DOCUMENTATION.md)
+- **Issues**: [GitHub Issues](https://github.com/nestthub/v2hub-api/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/nestthub/v2hub-api/discussions)
 
 ---
 
