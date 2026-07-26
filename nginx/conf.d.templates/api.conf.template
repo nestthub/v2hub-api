@@ -5,10 +5,11 @@ limit_req_zone $limit_key zone=admin:10m rate=3r/s;
 
 limit_conn_zone $limit_key zone=conn:10m;
 
-map $remote_addr $limit_key {
-    default         $binary_remote_addr;
-    1.1.1.1  "";
-}
+# NOTE: $limit_key is defined by 00-limit-key-map.conf, generated at
+# container start from $TRUSTED_NOLIMIT_IPS by
+# nginx/entrypoint/10-generate-limit-key-map.sh. That file loads first
+# (alphabetically, via `include /etc/nginx/conf.d/*.conf;` in nginx.conf),
+# so $limit_key is already defined by the time this file is parsed.
 
 upstream api_backend {
     server api:8000;
@@ -17,7 +18,7 @@ upstream api_backend {
 
 server {
     listen 80;
-    server_name v2hub.link www.v2hub.link;
+    server_name ${DOMAIN} www.${DOMAIN};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -31,10 +32,10 @@ server {
 server {
     listen 443 ssl;
     http2 on;
-    server_name v2hub.link www.v2hub.link;
+    server_name ${DOMAIN} www.${DOMAIN};
 
-    ssl_certificate /etc/letsencrypt/live/v2hub.link/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/v2hub.link/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_cache shared:SSL:10m;

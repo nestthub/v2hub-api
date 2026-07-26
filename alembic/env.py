@@ -7,10 +7,10 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-from src.core.config import settings
+from v2hub_api.core.config import settings
 
 # Import models to ensure they're registered
-from src.db.models import Base
+from v2hub_api.db.models import Base
 
 # Alembic Config object
 config = context.config

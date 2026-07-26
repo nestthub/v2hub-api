@@ -206,10 +206,19 @@ v2hub-api/
 │   └── loki.yml                         # Log storage config
 ├── nginx/
 │   ├── nginx.conf
-│   └── conf.d/
-│       └── api.conf                     # Nginx configuration
+│   ├── conf.d.templates/
+│   │   └── api.conf.template            # Rendered via envsubst at container start
+│   ├── conf-test.d/
+│   │   └── api.conf                     # Domain-free config for local testing
+│   ├── entrypoint/
+│   │   └── 10-generate-limit-key-map.sh # Builds the rate-limit exemption map
+│   └── grafana.htpasswd                 # Basic auth for /grafana/ (optional)
 ├── certbot-renew/
 │   └── Dockerfile                       # SSL certificate renewal
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                       # Lint, type-check, tests, Docker build
+│       └── deploy.yml                   # SSH deploy + migrations + health check
 ├── docs/
 │   ├── API_DOCUMENTATION.md             # Complete API reference
 │   ├── TYPES.md                         # Type reference
@@ -370,6 +379,11 @@ DEBUG=false
 
 DOMAIN=YOURDOMAIN.com
 
+# Comma-separated IPs exempt from nginx rate limiting (optional, e.g.
+# a monitoring probe or internal health-checker). Consumed by
+# nginx/entrypoint/10-generate-limit-key-map.sh at container start.
+TRUSTED_NOLIMIT_IPS=
+
 # ─────────────────────────────
 # Server
 # ─────────────────────────────
@@ -436,19 +450,20 @@ LOG_FORMAT=%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 ### Configuration Reference
 
-| Category        | Variable                       | Default | Description                          |
-| --------------- | ------------------------------ | ------- | ------------------------------------ |
-| **Limits**      | `MAX_SUBSCRIPTIONS_PER_USER`   | 3       | Max subscriptions per user           |
-|                 | `MAX_SOURCES_PER_SUBSCRIPTION` | 150     | Max sources per subscription         |
-|                 | `MAX_CONFIGS_PER_SUBSCRIPTION` | 150     | Max resolved configs                 |
-|                 | `MAX_NESTING_DEPTH`            | 3       | Max depth for nested references      |
-| **Performance** | `DB_POOL_SIZE`                 | 10      | Database connection pool size        |
-|                 | `REDIS_TTL`                    | 600     | Cache TTL in seconds                 |
-|                 | `FETCH_TIMEOUT`                | 3       | HTTP fetch timeout (seconds)         |
-| **Security**    | `API_TOKEN_LENGTH`             | 16      | Length of generated tokens           |
-|                 | `ADMIN_ALLOWED_IPS`            | -       | Comma-separated IP whitelist         |
-| **Rate Limits** | `PUBLIC_RPS`                   | 3       | Requests/second for public endpoints |
-|                 | `INTERNAL_WITH_TOKEN_RPS`      | 3       | Requests/second for authenticated    |
+| Category        | Variable                       | Default | Description                                         |
+| --------------- | ------------------------------ | ------- | --------------------------------------------------- |
+| **Limits**      | `MAX_SUBSCRIPTIONS_PER_USER`   | 3       | Max subscriptions per user                          |
+|                 | `MAX_SOURCES_PER_SUBSCRIPTION` | 150     | Max sources per subscription                        |
+|                 | `MAX_CONFIGS_PER_SUBSCRIPTION` | 150     | Max resolved configs                                |
+|                 | `MAX_NESTING_DEPTH`            | 3       | Max depth for nested references                     |
+| **Performance** | `DB_POOL_SIZE`                 | 10      | Database connection pool size                       |
+|                 | `REDIS_TTL`                    | 600     | Cache TTL in seconds                                |
+|                 | `FETCH_TIMEOUT`                | 3       | HTTP fetch timeout (seconds)                        |
+| **Security**    | `API_TOKEN_LENGTH`             | 16      | Length of generated tokens                          |
+|                 | `ADMIN_ALLOWED_IPS`            | -       | Comma-separated IP whitelist                        |
+| **Rate Limits** | `PUBLIC_RPS`                   | 3       | Requests/second for public endpoints                |
+|                 | `INTERNAL_WITH_TOKEN_RPS`      | 3       | Requests/second for authenticated                   |
+|                 | `TRUSTED_NOLIMIT_IPS`          | -       | Comma-separated IPs exempt from nginx rate limiting |
 
 ---
 
@@ -833,86 +848,130 @@ pre-commit run --all-files
 ### Production Deployment Checklist
 
 - [ ] Set `DEBUG=false`
-- [ ] Use strong `SECRET_KEY` and `ADMIN_SECRET_KEY` (min 32 chars)
+- [ ] Use strong `SECRET_KEY`, `ADMIN_SECRET_KEY`, and `POSTGRES_PASSWORD` (min 32 chars)
+- [ ] Set `DOMAIN` to your real domain — it's used to render the nginx config and request the SSL certificate
 - [ ] Configure `ADMIN_ALLOWED_IPS` with specific IPs
-- [ ] Enable HSTS and CSP (`ENABLE_HSTS=true`, `ENABLE_CSP=true`)
-- [ ] Setup SSL/TLS certificates in Nginx
 - [ ] Configure proper CORS origins (not `*`)
-- [ ] Set appropriate rate limits for your use case
-- [ ] Set `GF_SECURITY_ADMIN_PASSWORD` to a strong password
-- [ ] Restrict `/grafana/` to trusted IPs in nginx
-- [ ] Ensure no monitoring ports (9090, 3100, 12345, 3000) are exposed publicly
+- [ ] Set appropriate rate limits for your use case (`nginx/conf.d.templates/api.conf.template`)
+- [ ] Set a real `TRUSTED_NOLIMIT_IPS` if you have monitoring/health-check IPs that shouldn't be rate-limited
+- [ ] Issue SSL certificates with certbot before first start (see below)
+- [ ] Set up `nginx/grafana.htpasswd` if the Grafana location is enabled
 - [ ] Configure backup strategy for PostgreSQL
-- [ ] Setup Redis persistence if needed
-- [ ] Review and adjust resource limits (pool sizes, timeouts)
+- [ ] Setup Redis persistence if needed (already configured via `--save 60 1`)
+- [ ] Review and adjust resource limits (pool sizes, timeouts) for your traffic
 
-### Docker Compose Production
+### Docker Compose Services
 
-```yaml
-# docker-compose.prod.yml
-version: "3.8"
+The project ships a single `docker-compose.yml` covering the full stack — no separate prod override file is needed:
 
-services:
-  api:
-    build: .
-    environment:
-      - DEBUG=false
-      - WORKERS=4
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: "1"
-          memory: 512M
+| Service         | Purpose                                                 |
+| --------------- | ------------------------------------------------------- |
+| `api`           | FastAPI app (Uvicorn), internal port 8000               |
+| `worker`        | Celery worker — background refresh of external sources  |
+| `beat`          | Celery beat — schedules periodic tasks                  |
+| `postgres`      | PostgreSQL 16, data persisted to `./data/db_data`       |
+| `redis`         | Redis 7, AOF-style persistence via `--save 60 1`        |
+| `nginx`         | Reverse proxy, SSL termination, rate limiting           |
+| `certbot-renew` | Automatic Let's Encrypt certificate renewal (every 12h) |
 
-  nginx:
-    volumes:
-      - ./ssl:/etc/nginx/ssl:ro
-      - ./nginx/conf.d/api.conf:/etc/nginx/conf.d/default.conf:ro
+Monitoring services (Prometheus, Loki, Alloy, Grafana) are present but commented out in `docker-compose.yml` — uncomment them if you want the full observability stack (see [Monitoring](#-monitoring)).
+
+```bash
+# Start everything
+docker compose up -d
+
+# Start only what you need locally (e.g. no nginx/certbot for local dev)
+docker compose up -d api worker beat postgres redis
 ```
 
-### Nginx SSL Configuration
+### Nginx Configuration (templated)
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name api.example.com;
+Nginx configs live under `nginx/conf.d.templates/*.conf.template` and are **not** committed with real values baked in — they use placeholders (`${DOMAIN}`) that get filled in automatically at container start via nginx's built-in `envsubst`-on-templates entrypoint. You never need to hand-edit an nginx config file after cloning.
 
-    ssl_certificate /etc/nginx/ssl/fullchain.pem;
-    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
+What you configure instead, in `.env`:
 
-    location / {
-        proxy_pass http://api:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # Grafana — internal access only
-    location /grafana/ {
-        allow 1.2.3.4;   # your IP
-        deny  all;
-
-        proxy_pass       http://grafana:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_redirect   http://grafana:3000/ /grafana/;
-    }
-
-    # Block metrics endpoint from public
-    location /metrics {
-        deny all;
-    }
-}
+```bash
+DOMAIN=YOURDOMAIN.com
+# Comma-separated list of IPs exempt from rate limiting (optional)
+TRUSTED_NOLIMIT_IPS=1.1.1.1,2.2.2.2
 ```
+
+On container start:
+
+1. `nginx/entrypoint/10-generate-limit-key-map.sh` reads `TRUSTED_NOLIMIT_IPS` and generates `/etc/nginx/conf.d/00-limit-key-map.conf` (the `map $remote_addr $limit_key { ... }` block).
+2. Nginx's built-in entrypoint renders every `*.template` file in `nginx/conf.d.templates/` into `/etc/nginx/conf.d/`, substituting `${DOMAIN}` with the real value from your `.env`.
+3. Nginx starts with the fully rendered config.
+
+To inspect what was generated inside a running container:
+
+```bash
+docker compose exec nginx cat /etc/nginx/conf.d/api.conf
+docker compose exec nginx cat /etc/nginx/conf.d/00-limit-key-map.conf
+```
+
+There's also `nginx/conf-test.d/api.conf` — a minimal, domain-free config (no SSL, `server_name localhost`) for quick local testing without certificates.
+
+### Issuing SSL Certificates (first-time setup)
+
+Before the HTTPS server block in `api.conf.template` will work, you need a real certificate at `/etc/letsencrypt/live/${DOMAIN}/`. A common bootstrap flow:
+
+```bash
+# 1. Start nginx with only the HTTP (port 80) block active, so certbot's
+#    HTTP-01 challenge can be served via /.well-known/acme-challenge/
+docker compose up -d nginx
+
+# 2. Request the certificate (webroot method, matches the acme-challenge
+#    location already present in api.conf.template)
+docker compose run --rm certbot-renew \
+  certbot certonly --webroot -w /var/www/certbot \
+  -d ${DOMAIN} -d www.${DOMAIN} \
+  --email you@example.com --agree-tos --no-eff-email
+
+# 3. Reload nginx to pick up the new certificate, then start everything else
+docker compose exec nginx nginx -s reload
+docker compose up -d
+```
+
+After this, `certbot-renew` keeps the certificate current automatically (checks every 12 hours, reloads nginx via `docker exec nginx nginx -s reload` on renewal).
+
+### Moving PostgreSQL Data to a Named Volume
+
+By default, Postgres data is stored via a bind mount at `./data/db_data`. If you'd rather use the `postgres_data` named volume already declared in `docker-compose.yml`:
+
+```bash
+# 1. Dump the existing database (works regardless of Postgres version later)
+docker compose exec -T postgres pg_dump -U postgres -d v2hub --format=custom --file=/tmp/v2hub.dump
+docker compose cp postgres:/tmp/v2hub.dump ./v2hub.dump
+
+# 2. Stop everything
+docker compose down
+
+# 3. In docker-compose.yml, change the postgres service's volume from
+#    ./data/db_data:/var/lib/postgresql/data
+#    to
+#    postgres_data:/var/lib/postgresql/data
+
+# 4. Start only postgres — it will initialize a fresh, empty volume
+docker compose up -d postgres
+docker compose logs -f postgres   # wait for "database system is ready to accept connections"
+
+# 5. Restore the dump into the new volume
+docker compose cp ./v2hub.dump postgres:/tmp/v2hub.dump
+docker compose exec postgres pg_restore -U postgres -d v2hub --clean --if-exists /tmp/v2hub.dump
+
+# 6. Bring everything back up
+docker compose up -d
+curl http://localhost/health
+```
+
+### CI/CD
+
+GitHub Actions workflows live under `.github/workflows/`:
+
+- **`ci.yml`** — runs on every push/PR to `main`. Spins up Postgres and Redis service containers, lints with `ruff`, type-checks with `mypy`, applies Alembic migrations, runs the test suite, and validates that the Docker image builds.
+- **`deploy.yml`** — triggered automatically after a successful CI run on `main` (or manually via `workflow_dispatch`). SSHes into the production server, pulls the latest code, rebuilds and recreates containers, **runs `alembic upgrade head` inside the `api` container**, reloads nginx, and polls `/health` until it returns `200`.
+
+Required repository secrets for deployment: `HOST`, `PORT`, `USER`, `SSH_KEY`.
 
 ---
 
