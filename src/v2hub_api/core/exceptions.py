@@ -280,16 +280,16 @@ def to_http_exception(exc: Exception) -> HTTPException:
             NotFoundError: status.HTTP_404_NOT_FOUND,
             SubscriptionNotFoundError: status.HTTP_404_NOT_FOUND,
             SourceNotFoundError: status.HTTP_404_NOT_FOUND,
-            ValidationError: status.HTTP_422_UNPROCESSABLE_ENTITY,
-            InvalidConfigError: status.HTTP_422_UNPROCESSABLE_ENTITY,
-            InvalidURLError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+            ValidationError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            InvalidConfigError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            InvalidURLError: status.HTTP_422_UNPROCESSABLE_CONTENT,
             ConflictError: status.HTTP_409_CONFLICT,
             DuplicateNameError: status.HTTP_409_CONFLICT,
-            CircularReferenceError: status.HTTP_422_UNPROCESSABLE_ENTITY,
-            NestingTooDeepError: status.HTTP_422_UNPROCESSABLE_ENTITY,
-            TooManyConfigsError: status.HTTP_422_UNPROCESSABLE_ENTITY,
-            TooManySourcesError: status.HTTP_422_UNPROCESSABLE_ENTITY,
-            TooManySubscriptionsError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+            CircularReferenceError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            NestingTooDeepError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            TooManyConfigsError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            TooManySourcesError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            TooManySubscriptionsError: status.HTTP_422_UNPROCESSABLE_CONTENT,
             ExternalFetchError: status.HTTP_400_BAD_REQUEST,
             CacheError: status.HTTP_500_INTERNAL_SERVER_ERROR,
             RateLimitError: status.HTTP_429_TOO_MANY_REQUESTS,
@@ -307,7 +307,7 @@ def to_http_exception(exc: Exception) -> HTTPException:
     # 2) Pydantic validation
     if isinstance(exc, PydanticValidationError):
         return HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "error": "validation_error",
                 "message": "Request validation failed",

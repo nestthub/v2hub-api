@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import datetime  # noqa: TC003
 
 from sqlalchemy import (
     DateTime,
@@ -11,9 +11,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from v2hub_api.db.models import Base, TimestampMixin
-
-if TYPE_CHECKING:
-    from datetime import datetime
 
 # ═══════════════════════════════════════════════════════════════════════════
 # External Subscription Cache
