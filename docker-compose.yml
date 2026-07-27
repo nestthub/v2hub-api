@@ -85,7 +85,6 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
-    container_name: nginx
     ports:
       - "80:80"
       - "443:443"
@@ -112,7 +111,6 @@ services:
 
   certbot-renew:
     build: ./certbot-renew
-    container_name: certbot-renew
     volumes:
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt
@@ -125,7 +123,6 @@ services:
 
       #  alloy:
       #    image: grafana/alloy:latest
-      #    container_name: alloy
       #    restart: unless-stopped
       #    expose:
       #      - "12345"
@@ -143,7 +140,6 @@ services:
       #
       #  loki:
       #    image: grafana/loki:latest
-      #    container_name: loki
       #    restart: unless-stopped
       #    expose:
       #      - "3100"
@@ -155,7 +151,6 @@ services:
       #
       #  prometheus:
       #    image: prom/prometheus:latest
-      #    container_name: prometheus
       #    restart: unless-stopped
       #    expose:
       #      - "9090"
@@ -167,7 +162,6 @@ services:
       #
       #  grafana:
       #    image: grafana/grafana:latest
-      #    container_name: grafana
       #    restart: unless-stopped
       #    expose:
       #      - "3000"
