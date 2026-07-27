@@ -4,6 +4,10 @@
 
 A production-ready FastAPI-based service for managing, aggregating, and serving VPN proxy subscriptions with multi-source support, intelligent caching, and comprehensive security features.
 
+### 🌐 Part of the [V2Hub Ecosystem](https://github.com/nestthub/nestthub/blob/main/ecosystems/v2hub/README.md)
+
+This package is one component of V2Hub — see the full project overview, architecture, and all related repositories.
+
 ---
 
 ## 🌟 Features
