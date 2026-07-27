@@ -1,0 +1,125 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    steps:
+      - name: Guard against missing secrets
+        run: |
+          missing=0
+          for var in HOST PORT USER SSH_KEY; do
+            if [ -z "${!var}" ]; then
+              echo "Missing required secret: $var"
+              missing=1
+            fi
+          done
+          if [ "$missing" = "1" ]; then
+            exit 1
+          fi
+        env:
+          HOST: ${{ secrets.HOST }}
+          PORT: ${{ secrets.PORT }}
+          USER: ${{ secrets.USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Add server to known_hosts
+        run: |
+          ssh-keyscan -p "${{ secrets.PORT }}" -H "${{ secrets.HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy application (pull, rebuild, recreate containers)
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.PORT }}" \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              "${{ secrets.USER }}@${{ secrets.HOST }}" bash -s <<'EOF'
+            set -euo pipefail
+            cd /root/v2hub-api
+
+            echo "Fetching latest changes from origin/main..."
+            git fetch origin
+            git reset --hard origin/main
+
+            echo "Pulling prebuilt images if available..."
+            docker compose pull || true
+
+            echo "Recreating containers..."
+            docker compose up -d --build
+
+            echo "Running database migrations..."
+            docker compose exec -T api alembic upgrade head
+
+            echo "Restarting nginx to refresh upstream DNS resolution..."
+            docker compose restart nginx
+
+            echo "Cleaning up dangling images and build cache..."
+            docker image prune -f
+            docker builder prune -f
+          EOF
+
+      - name: Wait for application health check
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.PORT }}" \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              "${{ secrets.USER }}@${{ secrets.HOST }}" bash -s <<'EOF'
+            set -euo pipefail
+            cd /root/v2hub-api
+
+            echo "Current container status:"
+            docker compose ps
+
+            echo "Waiting for /health to return HTTP 200..."
+            attempts=30
+            delay=5
+            success=0
+
+            for i in $(seq 1 "$attempts"); do
+              status=$(curl -sk -o /dev/null -w "%{http_code}" -L https://localhost/health || echo "000")
+              echo "Attempt $i/$attempts: HTTP $status"
+              if [ "$status" = "200" ]; then
+                success=1
+                break
+              fi
+              sleep "$delay"
+            done
+
+            if [ "$success" -ne 1 ]; then
+              echo "Health check failed after $attempts attempts."
+              echo "----- docker compose ps -----"
+              docker compose ps
+              echo "----- docker compose logs (last 200 lines) -----"
+              docker compose logs --tail=200
+              exit 1
+            fi
+
+            echo "Health check passed: /health returned HTTP 200."
+          EOF
+
+      - name: Clean up local SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

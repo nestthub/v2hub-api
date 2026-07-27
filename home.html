@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VPN Subscription Manager - Professional API & Tools</title>
+    <title>v2hub</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -417,14 +417,14 @@
     <div class="container">
       <header>
         <div class="logo-wrapper">
-          <h1 class="logo">VPN Subscription Manager</h1>
-          <p class="tagline">Professional API & Tools Ecosystem</p>
+          <h1 class="logo">v2hub Ecosystem</h1>
+          <p class="tagline">VPN Subscription Management Platform</p>
         </div>
 
         <p class="description">
-          Мощная система управления VPN подписками с поддержкой множественных
-          источников, интеллектуальным кешированием и полным набором
-          инструментов для разработчиков.
+          A modern VPN subscription management ecosystem with multi-source
+          support, intelligent caching, automation tools, and a complete
+          developer toolkit.
         </p>
 
         <div class="badges">
@@ -434,6 +434,8 @@
           <span class="badge">Redis 7</span>
           <span class="badge">Async</span>
           <span class="badge">REST API</span>
+          <span class="badge">Docker</span>
+          <span class="badge">Celery</span>
         </div>
 
         <div class="cta-buttons">
@@ -443,8 +445,9 @@
                 d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.14.18-.357.295-.6.295-.002 0-.003 0-.005 0l.213-3.054 5.56-5.022c.24-.213-.054-.334-.373-.121l-6.869 4.326-2.96-.924c-.64-.203-.658-.64.135-.954l11.566-4.458c.538-.196 1.006.128.832.941z"
               />
             </svg>
-            Открыть Telegram Бот
+            Open Telegram Bot
           </a>
+
           <a href="/site-docs/index.html" class="btn btn-secondary">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -454,72 +457,73 @@
                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
               />
             </svg>
-            Документация API
+            API Documentation
           </a>
         </div>
       </header>
 
       <section class="features">
-        <h2 class="section-title">Ключевые возможности</h2>
+        <h2 class="section-title">Key Features</h2>
         <div class="features-grid">
           <div class="feature-card">
             <div class="feature-icon">🚀</div>
-            <h3>Высокая производительность</h3>
+            <h3>High Performance</h3>
             <p>
-              Полностью асинхронная архитектура с двухуровневым кешированием
-              (Redis + PostgreSQL) обеспечивает молниеносную обработку запросов.
+              Fully asynchronous architecture with two-level caching (Redis +
+              PostgreSQL) delivering fast and reliable request processing.
             </p>
           </div>
 
           <div class="feature-card">
             <div class="feature-icon">🔗</div>
-            <h3>Мульти-источники</h3>
+            <h3>Multi-source Support</h3>
             <p>
-              Поддержка прямых конфигураций, внешних URL-подписок и внутренних
-              ссылок с автоматическим рекурсивным разрешением.
+              Support for direct configurations, external subscription URLs, and
+              internal sources with automatic recursive resolution.
             </p>
           </div>
 
           <div class="feature-card">
             <div class="feature-icon">🔒</div>
-            <h3>Безопасность</h3>
+            <h3>Security First</h3>
             <p>
-              HMAC-SHA256 подписи, IP whitelist, rate limiting, автоматическая
-              блокировка и security headers из коробки.
+              HMAC-SHA256 signatures, IP whitelisting, rate limiting, automatic
+              banning, and security headers out of the box.
             </p>
           </div>
 
           <div class="feature-card">
             <div class="feature-icon">⚡</div>
-            <h3>Фоновые задачи</h3>
+            <h3>Background Automation</h3>
             <p>
-              Celery workers автоматически обновляют внешние источники каждые 15
-              минут, обеспечивая актуальность данных.
+              Celery workers automatically refresh external sources every 15
+              minutes, keeping subscription data always up to date.
             </p>
           </div>
 
           <div class="feature-card">
             <div class="feature-icon">📝</div>
-            <h3>Кастомные комментарии</h3>
+            <h3>Custom Comments</h3>
             <p>
-              Добавляйте персональные комментарии к конфигурациям в каждой
-              подписке независимо.
+              Add personalized comments to generated configurations
+              independently for each subscription.
             </p>
           </div>
 
           <div class="feature-card">
             <div class="feature-icon">🛠️</div>
-            <h3>Полный набор инструментов</h3>
+            <h3>Complete Developer Toolkit</h3>
             <p>
-              REST API, Python библиотека, CLI утилита и Telegram бот -
-              выбирайте удобный способ работы.
+              REST API, Python SDK, CLI tools, and Telegram bot integration —
+              choose the workflow that fits your needs.
             </p>
           </div>
         </div>
       </section>
 
       <section class="repositories">
-        <h2 class="section-title">Репозитории проекта</h2>
+        <h2 class="section-title">Project Ecosystem</h2>
+
         <div class="repo-grid">
           <a
             href="https://github.com/nestthub/v2hub-api"
@@ -528,17 +532,22 @@
           >
             <div class="repo-header">
               <div class="repo-icon">🌐</div>
-              <h3>API Server</h3>
+              <h3>v2hub-api</h3>
             </div>
+
             <p class="description">
-              Основной FastAPI сервер с полной REST API для управления
-              подписками, аутентификацией, кешированием и фоновыми задачами.
+              Core VPN subscription API platform built with FastAPI. Provides
+              multi-source aggregation, recursive subscription resolution,
+              HMAC-signed admin endpoints, background processing, caching, and
+              full observability infrastructure.
             </p>
+
             <div class="repo-tags">
               <span class="repo-tag">FastAPI</span>
               <span class="repo-tag">PostgreSQL</span>
               <span class="repo-tag">Redis</span>
               <span class="repo-tag">Celery</span>
+              <span class="repo-tag">Prometheus</span>
             </div>
           </a>
 
@@ -549,18 +558,44 @@
           >
             <div class="repo-header">
               <div class="repo-icon">🐍</div>
-              <h3>Python Client</h3>
+              <h3>v2hub-core</h3>
             </div>
+
             <p class="description">
-              Профессиональная Python библиотека с async/sync клиентами,
-              Pydantic моделями, retry логикой и полной поддержкой всех API
-              endpoints.
+              Shared platform library containing reusable business logic, API
+              models, validation schemas, and common components used across the
+              v2hub ecosystem.
             </p>
+
             <div class="repo-tags">
               <span class="repo-tag">Python</span>
-              <span class="repo-tag">AsyncIO</span>
               <span class="repo-tag">Pydantic</span>
-              <span class="repo-tag">Type-Safe</span>
+              <span class="repo-tag">SDK</span>
+              <span class="repo-tag">Async</span>
+            </div>
+          </a>
+
+          <a
+            href="https://github.com/nestthub/v2hub-panel"
+            class="repo-card"
+            target="_blank"
+          >
+            <div class="repo-header">
+              <div class="repo-icon">🖥️</div>
+              <h3>v2hub-panel</h3>
+            </div>
+
+            <p class="description">
+              Lightweight web mini-app for managing subscriptions and sources.
+              Built with FastAPI and vanilla JavaScript without a build step,
+              featuring security controls and API integration.
+            </p>
+
+            <div class="repo-tags">
+              <span class="repo-tag">FastAPI</span>
+              <span class="repo-tag">JavaScript</span>
+              <span class="repo-tag">Web UI</span>
+              <span class="repo-tag">CORS</span>
             </div>
           </a>
 
@@ -571,16 +606,67 @@
           >
             <div class="repo-header">
               <div class="repo-icon">⌨️</div>
-              <h3>CLI Tool</h3>
+              <h3>v2hub-cli</h3>
             </div>
+
             <p class="description">
-              Мощная командная строка с Rich UI, интерактивными промптами,
-              автодополнением и поддержкой всех операций API.
+              Powerful terminal client for managing subscriptions, sources, and
+              administrative operations directly from the command line.
             </p>
+
             <div class="repo-tags">
               <span class="repo-tag">Typer</span>
               <span class="repo-tag">Rich</span>
-              <span class="repo-tag">Interactive</span>
+              <span class="repo-tag">CLI</span>
+              <span class="repo-tag">Python</span>
+            </div>
+          </a>
+
+          <a
+            href="https://github.com/nestthub/v2hub-admin"
+            class="repo-card"
+            target="_blank"
+          >
+            <div class="repo-header">
+              <div class="repo-icon">🛡️</div>
+              <h3>v2hub-admin</h3>
+            </div>
+
+            <p class="description">
+              Administration module providing secure management operations,
+              HMAC-SHA256 authentication, user management, IP filtering, and
+              access control.
+            </p>
+
+            <div class="repo-tags">
+              <span class="repo-tag">HMAC-SHA256</span>
+              <span class="repo-tag">Security</span>
+              <span class="repo-tag">Admin</span>
+              <span class="repo-tag">API</span>
+            </div>
+          </a>
+
+          <a
+            href="https://github.com/nestthub/v2hub-bot"
+            class="repo-card"
+            target="_blank"
+          >
+            <div class="repo-header">
+              <div class="repo-icon">🤖</div>
+              <h3>v2hub-bot</h3>
+            </div>
+
+            <p class="description">
+              Telegram-based self-service interface for subscription management.
+              Supports configuration delivery, QR codes, and automated user
+              workflows.
+            </p>
+
+            <div class="repo-tags">
+              <span class="repo-tag">Telegram</span>
+              <span class="repo-tag">Automation</span>
+              <span class="repo-tag">Python</span>
+              <span class="repo-tag">Bot API</span>
             </div>
           </a>
         </div>
@@ -588,8 +674,14 @@
 
       <footer>
         <p>
-          <a href="/site-docs/index.html">Документация</a> •
-          <a href="https://t.me/nestt" target="_blank">Поддержка</a>
+          <a href="/site-docs/index.html">Documentation</a> •
+          <a
+            href="https://github.com/nestthub/nestthub/blob/main/ecosystems/v2hub/README.md"
+            target="_blank"
+            >GitHub</a
+          >
+          •
+          <a href="https://t.me/nestt" target="_blank">Support</a>
         </p>
         <p style="margin-top: 1rem; font-size: 0.875rem">
           © 2026 v2hub. Open Source Project.
