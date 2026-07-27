@@ -10,6 +10,8 @@ from functools import lru_cache
 from pydantic import Field, PostgresDsn, RedisDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from v2hub_api import __version__
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -20,7 +22,7 @@ class Settings(BaseSettings):
 
     # ═══ Application ═══════════════════════════════════════════════════════
     app_name: str = Field(default="VPN Subscription API", validation_alias="APP_NAME")
-    app_version: str = Field(default="1.0.0", validation_alias="APP_VERSION")
+    app_version: str = Field(default=__version__, validation_alias="APP_VERSION")
     debug: bool = Field(default=False, validation_alias="DEBUG")
     environment: str = Field(default="production", validation_alias="ENVIRONMENT")
 
