@@ -73,6 +73,33 @@ jobs:
             echo "Running database migrations..."
             docker compose exec -T api alembic upgrade head
 
+            echo "Checking api directly (bypassing nginx) before restarting nginx..."
+            attempts=30
+            delay=2
+            api_ready=0
+            for i in $(seq 1 "$attempts"); do
+              status=$(docker compose exec -T api python -c "
+            import urllib.request
+            try:
+                response = urllib.request.urlopen('http://localhost:8000/health', timeout=3)
+                print(response.status)
+            except Exception:
+                print(0)
+            " 2>/dev/null || echo "000")
+              echo "Attempt $i/$attempts: api direct health = $status"
+              if [ "$status" = "200" ]; then
+                api_ready=1
+                break
+              fi
+              sleep "$delay"
+            done
+            if [ "$api_ready" -ne 1 ]; then
+              echo "api never became ready directly, aborting before nginx restart to avoid downtime."
+              docker compose logs --tail=200 api
+              exit 1
+            fi
+            echo "api is directly reachable, proceeding to restart nginx."
+
             echo "Restarting nginx to refresh upstream DNS resolution..."
             docker compose restart nginx
 
