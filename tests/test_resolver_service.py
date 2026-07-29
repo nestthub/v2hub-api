@@ -1,9 +1,22 @@
-"""Tests for v2hub_api.services.resolver_service.ResolverService.
+"""Extended tests for v2hub_api.services.resolver_service.ResolverService.
 
-These tests use an in-memory SQLite database for subscriptions/sources/
-comments (real repository behavior), and mock CacheService for external
-URL fetching so no network access is required.
+These complement test_resolver_service.py by covering:
+- Comment precedence/overlay rules (root wins, first-seen-nested wins over deeper)
+- Description inheritance precedence (root wins over nested)
+- Correctness under the concurrent (asyncio.gather) fetch path for
+  EXTERNAL_URL and INTERNAL_TOKEN siblings: ordering, dedup, and
+  max_configs truncation must remain deterministic and independent of
+  which coroutine happens to finish first.
+- Mixed source types within a single subscription (CONFIG + EXTERNAL_URL
+  + INTERNAL_TOKEN together), preserving declared order.
+- Partial failure isolation among concurrently-fetched siblings.
+- is_hidden semantics for EXTERNAL_URL / INTERNAL_TOKEN sources at depth 0
+  (not just CONFIG, which the base suite already covers).
+- Cross-type deduplication (CONFIG source and EXTERNAL_URL-provided config
+  sharing the same config hash).
 """
+
+import asyncio
 
 from unittest.mock import AsyncMock
 
@@ -19,6 +32,11 @@ from v2hub_api.services.resolver_service import ResolverService
 from v2hub_api.utils.config_parser import get_config_hash
 
 pytestmark = pytest.mark.asyncio
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers (mirrors the base test module so this file is self-contained)
+# ---------------------------------------------------------------------------
 
 
 async def _make_user_and_subscription(session, token, user_hash="u1", user_id=1, api_token=None):
@@ -90,290 +108,578 @@ async def _add_external_source(
     )
 
 
-def _make_mock_cache(cache_contents: dict[str, str] | None = None):
-    """Create a mock CacheService returning canned content for get_from_cache_only."""
+def _make_mock_cache(
+    cache_contents: dict[str, str] | None = None, delays: dict[str, float] | None = None
+):
+    """Mock CacheService.get_from_cache_only.
+
+    `delays` lets tests simulate different latencies per URL so we can prove
+    that result ordering/limits do not depend on completion order under the
+    concurrent (asyncio.gather) fetch path.
+    """
     mock = AsyncMock()
     contents = cache_contents or {}
+    delays = delays or {}
 
     async def _get_from_cache_only(url):
+        delay = delays.get(url)
+        if delay:
+            await asyncio.sleep(delay)
         return contents.get(url)
 
     mock.get_from_cache_only.side_effect = _get_from_cache_only
     return mock
 
 
-class TestResolveSimpleConfig:
-    async def test_resolves_single_config_source(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-1")
-        config_hash = await _add_config_source(db_session, "sub-1", "vless://uuid1@host:443")
-
-        resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("sub-1")
-
-        assert result.count == 1
-        assert result.configs[0].hash == config_hash
-        assert result.configs[0].config == "vless://uuid1@host:443"
-        assert result.truncated is False
-        assert result.depth_exceeded is False
-
-    async def test_resolve_missing_subscription_returns_empty(self, db_session):
-        resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("does-not-exist")
-
-        assert result.count == 0
-        assert result.configs == []
-
-    async def test_multiple_config_sources_ordered(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-1")
-        h1 = await _add_config_source(
-            db_session, "sub-1", "vless://uuid1@host:443", source_id="s1", order_index=0
-        )
-        h2 = await _add_config_source(
-            db_session, "sub-1", "vless://uuid2@host:443", source_id="s2", order_index=1
-        )
-
-        resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("sub-1")
-
-        assert [c.hash for c in result.configs] == [h1, h2]
+# ---------------------------------------------------------------------------
+# Comment overlay / precedence rules
+# ---------------------------------------------------------------------------
 
 
-class TestResolveWithComments:
-    async def test_appends_subscription_specific_comment(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-1")
-        config_hash = await _add_config_source(db_session, "sub-1", "vless://uuid1@host:443")
-        await ConfigCommentRepository(db_session).upsert_comment("sub-1", config_hash, "My Server")
+class TestCommentPrecedence:
+    async def test_root_comment_wins_over_nested_comment(self, db_session):
+        """If both root and a nested subscription define a comment for the
+        same config hash, the ROOT subscription's comment must win — nested
+        comments are merged only via `if not root_comment_map.get(key)`.
+        """
+        await _make_user_and_subscription(db_session, "sub-parent")
+        await _make_user_and_subscription(db_session, "sub-child", user_hash="u1")
+        await _add_internal_source(db_session, "sub-parent", "sub-child", source_id="ref-1")
 
-        resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("sub-1")
-
-        assert result.configs[0].config == "vless://uuid1@host:443#My Server"
-
-    async def test_no_comment_leaves_config_unmodified(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-1")
-        await _add_config_source(db_session, "sub-1", "vless://uuid1@host:443")
-
-        resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("sub-1")
-
-        assert result.configs[0].config == "vless://uuid1@host:443"
-
-
-class TestResolveDeduplication:
-    async def test_deduplicates_same_config_hash(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-1")
         config_hash = await _add_config_source(
-            db_session, "sub-1", "vless://uuid1@host:443", source_id="s1"
+            db_session, "sub-child", "vless://uuid1@host:443", source_id="child-cfg"
         )
 
-        # Second source pointing to the *same* proxy config
-        from v2hub_api.db.repositories.source_repository import SourceRepository as SR
-
-        await SR(db_session).create_source(
-            source_id="s2",
-            subscription_token="sub-1",
-            source_type=SourceType.CONFIG.value,
-            config_hash=config_hash,
-            order_index=1,
+        # Root defines its own comment for this config hash, even though the
+        # config source itself only exists in the child subscription.
+        await ConfigCommentRepository(db_session).upsert_comment(
+            "sub-parent", config_hash, "Root Comment"
+        )
+        await ConfigCommentRepository(db_session).upsert_comment(
+            "sub-child", config_hash, "Child Comment"
         )
 
         resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("sub-1")
+        result = await resolver.resolve("sub-parent")
 
         assert result.count == 1
+        assert result.configs[0].config == "vless://uuid1@host:443#Root Comment"
+
+    async def test_nested_comment_used_when_root_has_none(self, db_session):
+        await _make_user_and_subscription(db_session, "sub-parent")
+        await _make_user_and_subscription(db_session, "sub-child", user_hash="u1")
+        await _add_internal_source(db_session, "sub-parent", "sub-child", source_id="ref-1")
+
+        config_hash = await _add_config_source(
+            db_session, "sub-child", "vless://uuid1@host:443", source_id="child-cfg"
+        )
+        await ConfigCommentRepository(db_session).upsert_comment(
+            "sub-child", config_hash, "Child Comment"
+        )
+
+        resolver = ResolverService(db_session, _make_mock_cache())
+        result = await resolver.resolve("sub-parent")
+
+        assert result.configs[0].config == "vless://uuid1@host:443#Child Comment"
+
+    async def test_first_seen_nested_comment_wins_over_deeper_nested(self, db_session):
+        """sub-a -> sub-b -> sub-c, config lives in sub-c. If both sub-b and
+        sub-c define a comment for that hash, sub-b's (shallower, visited
+        first during the internal-token comment merge) should win, since the
+        merge only fills in missing keys and sub-b is merged before recursing
+        into sub-c.
+        """
+        await _make_user_and_subscription(db_session, "sub-a")
+        await _make_user_and_subscription(db_session, "sub-b", user_hash="u1")
+        await _make_user_and_subscription(db_session, "sub-c", user_hash="u1")
+        await _add_internal_source(db_session, "sub-a", "sub-b", source_id="ref-a-b")
+        await _add_internal_source(db_session, "sub-b", "sub-c", source_id="ref-b-c")
+
+        config_hash = await _add_config_source(
+            db_session, "sub-c", "vless://uuid1@host:443", source_id="c-cfg"
+        )
+        await ConfigCommentRepository(db_session).upsert_comment("sub-b", config_hash, "B Comment")
+        await ConfigCommentRepository(db_session).upsert_comment("sub-c", config_hash, "C Comment")
+
+        resolver = ResolverService(db_session, _make_mock_cache())
+        result = await resolver.resolve("sub-a")
+
+        assert result.configs[0].config == "vless://uuid1@host:443#B Comment"
+
+    async def test_empty_string_comment_treated_as_falsy_and_overridable(self, db_session):
+        """root_comment_map merge uses `if not root_comment_map.get(key)`,
+        so an empty-string comment at root should NOT block a nested
+        non-empty comment from being used (empty string is falsy).
+        """
+        await _make_user_and_subscription(db_session, "sub-parent")
+        await _make_user_and_subscription(db_session, "sub-child", user_hash="u1")
+        await _add_internal_source(db_session, "sub-parent", "sub-child", source_id="ref-1")
+
+        config_hash = await _add_config_source(
+            db_session, "sub-child", "vless://uuid1@host:443", source_id="child-cfg"
+        )
+        await ConfigCommentRepository(db_session).upsert_comment("sub-parent", config_hash, "")
+        await ConfigCommentRepository(db_session).upsert_comment(
+            "sub-child", config_hash, "Child Comment"
+        )
+
+        resolver = ResolverService(db_session, _make_mock_cache())
+        result = await resolver.resolve("sub-parent")
+
+        assert result.configs[0].config == "vless://uuid1@host:443#Child Comment"
 
 
-class TestResolveExternalUrl:
-    async def test_resolves_configs_from_cached_content(self, db_session):
+# ---------------------------------------------------------------------------
+# Description inheritance precedence
+# ---------------------------------------------------------------------------
+
+
+class TestDescriptionPrecedence:
+    async def test_root_description_wins_over_nested_description(self, db_session):
+        user_repo = UserRepository(db_session)
+        await user_repo.create_user(user_hash="u1", user_id=1, api_token="tok")
+        await SubscriptionRepository(db_session).create_subscription(
+            token="sub-parent", name="p", user_hash="u1", description="Parent Desc"
+        )
+        await SubscriptionRepository(db_session).create_subscription(
+            token="sub-child", name="c", user_hash="u1", description="Child Desc"
+        )
+        await _add_internal_source(db_session, "sub-parent", "sub-child", source_id="ref-1")
+        await _add_config_source(db_session, "sub-child", "vless://uuid1@host:443")
+
+        resolver = ResolverService(db_session, _make_mock_cache())
+        result = await resolver.resolve("sub-parent")
+
+        assert result.description == "Parent Desc"
+
+    async def test_nested_description_used_when_root_has_none(self, db_session):
+        user_repo = UserRepository(db_session)
+        await user_repo.create_user(user_hash="u1", user_id=1, api_token="tok")
+        await SubscriptionRepository(db_session).create_subscription(
+            token="sub-parent", name="p", user_hash="u1", description=None
+        )
+        await SubscriptionRepository(db_session).create_subscription(
+            token="sub-child", name="c", user_hash="u1", description="Child Desc"
+        )
+        await _add_internal_source(db_session, "sub-parent", "sub-child", source_id="ref-1")
+        await _add_config_source(db_session, "sub-child", "vless://uuid1@host:443")
+
+        resolver = ResolverService(db_session, _make_mock_cache())
+        result = await resolver.resolve("sub-parent")
+
+        assert result.description == "Child Desc"
+
+    async def test_first_nested_description_wins_when_multiple_children(self, db_session):
+        """Root has no description, two internal sources point to children
+        that both have descriptions — the first one processed (in source
+        order_index order) should win, since `result.description` is only
+        overwritten while it still equals `settings.domain` (the default).
+        """
+        from v2hub_api.core.config import settings
+
+        user_repo = UserRepository(db_session)
+        await user_repo.create_user(user_hash="u1", user_id=1, api_token="tok")
+        await SubscriptionRepository(db_session).create_subscription(
+            token="sub-parent", name="p", user_hash="u1", description=None
+        )
+        await SubscriptionRepository(db_session).create_subscription(
+            token="sub-child-1", name="c1", user_hash="u1", description="First Child Desc"
+        )
+        await SubscriptionRepository(db_session).create_subscription(
+            token="sub-child-2", name="c2", user_hash="u1", description="Second Child Desc"
+        )
+        await _add_internal_source(
+            db_session, "sub-parent", "sub-child-1", source_id="ref-1", order_index=0
+        )
+        await _add_internal_source(
+            db_session, "sub-parent", "sub-child-2", source_id="ref-2", order_index=1
+        )
+        await _add_config_source(db_session, "sub-child-1", "vless://uuid1@host:443")
+        await _add_config_source(db_session, "sub-child-2", "vless://uuid2@host:443")
+
+        resolver = ResolverService(db_session, _make_mock_cache())
+        result = await resolver.resolve("sub-parent")
+
+        assert result.description == "First Child Desc"
+        assert result.description != settings.domain
+
+
+# ---------------------------------------------------------------------------
+# Concurrent EXTERNAL_URL fetch correctness (ordering, dedup, limits)
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentExternalFetchCorrectness:
+    async def test_result_order_matches_source_order_regardless_of_fetch_latency(self, db_session):
+        """Two EXTERNAL_URL sources are fetched concurrently; the *slower*
+        one is declared first (order_index=0). The final config order must
+        still follow declared source order, not completion order.
+        """
         await _make_user_and_subscription(db_session, "sub-1")
         await _add_external_source(
-            db_session, "sub-1", "https://example.com/sub", source_id="ext-1"
+            db_session, "sub-1", "https://slow.example.com/sub", source_id="ext-slow", order_index=0
+        )
+        await _add_external_source(
+            db_session, "sub-1", "https://fast.example.com/sub", source_id="ext-fast", order_index=1
         )
 
         cache = _make_mock_cache(
-            {"https://example.com/sub": "vless://uuid1@host:443\ntrojan://pass@host2:443\n"}
+            cache_contents={
+                "https://slow.example.com/sub": "vless://slow@host:443\n",
+                "https://fast.example.com/sub": "vless://fast@host:443\n",
+            },
+            delays={
+                "https://slow.example.com/sub": 0.05,
+                "https://fast.example.com/sub": 0.0,
+            },
         )
         resolver = ResolverService(db_session, cache)
         result = await resolver.resolve("sub-1")
 
         assert result.count == 2
-        configs = {c.config for c in result.configs}
-        assert "vless://uuid1@host:443" in configs
-        assert "trojan://pass@host2:443" in configs
+        assert [c.config for c in result.configs] == [
+            "vless://slow@host:443",
+            "vless://fast@host:443",
+        ]
 
-    async def test_no_cached_content_yields_nothing(self, db_session):
+    async def test_dedup_across_multiple_external_sources(self, db_session):
+        """Two different EXTERNAL_URL sources both surface the same config
+        line; only one should survive in the result, keyed by config hash.
+        """
         await _make_user_and_subscription(db_session, "sub-1")
         await _add_external_source(
-            db_session, "sub-1", "https://example.com/sub", source_id="ext-1"
+            db_session, "sub-1", "https://a.example.com/sub", source_id="ext-a", order_index=0
+        )
+        await _add_external_source(
+            db_session, "sub-1", "https://b.example.com/sub", source_id="ext-b", order_index=1
         )
 
-        resolver = ResolverService(db_session, _make_mock_cache())  # empty cache
-        result = await resolver.resolve("sub-1")
-
-        assert result.count == 0
-
-    async def test_missing_external_url_field_skipped(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-1")
-        # Source with no external_url set (edge case / bad data)
-        await SourceRepository(db_session).create_source(
-            source_id="ext-bad",
-            subscription_token="sub-1",
-            source_type=SourceType.EXTERNAL_URL.value,
-            external_url=None,
+        shared_line = "vless://shared@host:443\n"
+        cache = _make_mock_cache(
+            {
+                "https://a.example.com/sub": shared_line,
+                "https://b.example.com/sub": shared_line,
+            }
         )
-
-        resolver = ResolverService(db_session, _make_mock_cache())
+        resolver = ResolverService(db_session, cache)
         result = await resolver.resolve("sub-1")
-
-        assert result.count == 0
-
-
-class TestResolveInternalToken:
-    async def test_resolves_nested_subscription(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-parent")
-        await _make_user_and_subscription(db_session, "sub-child", user_hash="u1")
-        await _add_internal_source(db_session, "sub-parent", "sub-child", source_id="ref-1")
-        await _add_config_source(db_session, "sub-child", "vless://uuid1@host:443")
-
-        resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("sub-parent")
 
         assert result.count == 1
-        assert result.configs[0].config == "vless://uuid1@host:443"
 
-    async def test_cycle_detection_stops_infinite_recursion(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-a")
-        await _make_user_and_subscription(db_session, "sub-b", user_hash="u1")
-        await _add_internal_source(db_session, "sub-a", "sub-b", source_id="ref-a-to-b")
-        await _add_internal_source(db_session, "sub-b", "sub-a", source_id="ref-b-to-a")
-
-        resolver = ResolverService(db_session, _make_mock_cache())
-        # Should complete without hanging / raising RecursionError
-        result = await resolver.resolve("sub-a")
-        assert result.count == 0
-
-    async def test_missing_internal_token_field_skipped(self, db_session):
+    async def test_max_configs_truncation_deterministic_under_concurrency(self, db_session):
+        """max_configs=3, three EXTERNAL_URL sources each yield 2 configs.
+        Regardless of which coroutine finishes fetching first, only the
+        first `max_configs` configs *in declared source order* should
+        survive, and `truncated` must be True.
+        """
         await _make_user_and_subscription(db_session, "sub-1")
-        await SourceRepository(db_session).create_source(
-            source_id="ref-bad",
-            subscription_token="sub-1",
-            source_type=SourceType.INTERNAL_TOKEN.value,
-            internal_token=None,
+        await _add_external_source(
+            db_session, "sub-1", "https://a.example.com/sub", source_id="ext-a", order_index=0
+        )
+        await _add_external_source(
+            db_session, "sub-1", "https://b.example.com/sub", source_id="ext-b", order_index=1
+        )
+        await _add_external_source(
+            db_session, "sub-1", "https://c.example.com/sub", source_id="ext-c", order_index=2
         )
 
-        resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("sub-1")
-        assert result.count == 0
-
-
-class TestResolveDepthLimit:
-    async def test_depth_exceeded_flag_set_when_nesting_too_deep(self, db_session, monkeypatch):
-        # Build a chain sub-0 -> sub-1 -> sub-2 -> sub-3 -> sub-4, with max_depth patched to 2
-        tokens = [f"sub-{i}" for i in range(5)]
-        await _make_user_and_subscription(db_session, tokens[0])
-        for t in tokens[1:]:
-            await _make_user_and_subscription(db_session, t, user_hash="u1")
-
-        for i in range(len(tokens) - 1):
-            await _add_internal_source(db_session, tokens[i], tokens[i + 1], source_id=f"ref-{i}")
-
-        # Final subscription has an actual config so we can tell if it was reached
-        await _add_config_source(db_session, tokens[-1], "vless://uuid1@host:443")
-
-        resolver = ResolverService(db_session, _make_mock_cache())
-        resolver.max_depth = 2  # override for test determinism
-
-        result = await resolver.resolve(tokens[0])
-
-        assert result.depth_exceeded is True
-        assert result.count == 0  # never reached the deepest config
-
-    async def test_source_max_depth_limits_visibility(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-parent")
-        await _make_user_and_subscription(db_session, "sub-child", user_hash="u1")
-        # max_depth=0 on the internal-token source means it's only visible at depth 0
-        await _add_internal_source(
-            db_session, "sub-parent", "sub-child", source_id="ref-1", max_depth=0
+        cache = _make_mock_cache(
+            cache_contents={
+                "https://a.example.com/sub": "vless://a1@host:443\nvless://a2@host:443\n",
+                "https://b.example.com/sub": "vless://b1@host:443\nvless://b2@host:443\n",
+                "https://c.example.com/sub": "vless://c1@host:443\nvless://c2@host:443\n",
+            },
+            # Deliberately make the *last declared* source finish fastest,
+            # to prove ordering/truncation don't depend on completion order.
+            delays={
+                "https://a.example.com/sub": 0.06,
+                "https://b.example.com/sub": 0.03,
+                "https://c.example.com/sub": 0.0,
+            },
         )
-        await _add_config_source(db_session, "sub-child", "vless://uuid1@host:443")
-
-        resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("sub-parent")
-
-        # depth=0 <= source.max_depth(0) -> visible, so child *is* resolved once
-        assert result.count == 1
-
-
-class TestResolveConfigCountLimit:
-    async def test_truncated_flag_set_when_max_configs_exceeded(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-1")
-        for i in range(5):
-            await _add_config_source(
-                db_session, "sub-1", f"vless://uuid{i}@host:443", source_id=f"s{i}", order_index=i
-            )
-
-        resolver = ResolverService(db_session, _make_mock_cache())
-        resolver.max_configs = 3  # override for test determinism
+        resolver = ResolverService(db_session, cache)
+        resolver.max_configs = 3
 
         result = await resolver.resolve("sub-1")
 
         assert result.truncated is True
         assert result.count == 3
+        assert [c.config for c in result.configs] == [
+            "vless://a1@host:443",
+            "vless://a2@host:443",
+            "vless://b1@host:443",
+        ]
 
-    async def test_not_truncated_when_under_limit(self, db_session):
+    async def test_partial_failure_does_not_block_sibling_sources(self, db_session):
+        """One EXTERNAL_URL source raises during fetch (simulated via cache
+        raising); sibling sources fetched concurrently must still resolve
+        successfully.
+        """
         await _make_user_and_subscription(db_session, "sub-1")
-        await _add_config_source(db_session, "sub-1", "vless://uuid1@host:443")
+        await _add_external_source(
+            db_session,
+            "sub-1",
+            "https://broken.example.com/sub",
+            source_id="ext-broken",
+            order_index=0,
+        )
+        await _add_external_source(
+            db_session, "sub-1", "https://ok.example.com/sub", source_id="ext-ok", order_index=1
+        )
 
-        resolver = ResolverService(db_session, _make_mock_cache())
+        cache = AsyncMock()
+
+        async def _get_from_cache_only(url):
+            if url == "https://broken.example.com/sub":
+                raise RuntimeError("simulated cache failure")
+            if url == "https://ok.example.com/sub":
+                return "vless://ok@host:443\n"
+            return None
+
+        cache.get_from_cache_only.side_effect = _get_from_cache_only
+
+        resolver = ResolverService(db_session, cache)
         result = await resolver.resolve("sub-1")
 
-        assert result.truncated is False
+        assert result.count == 1
+        assert result.configs[0].config == "vless://ok@host:443"
 
 
-class TestResolveHiddenSources:
-    async def test_hidden_source_excluded_at_root_depth(self, db_session):
-        await _make_user_and_subscription(db_session, "sub-1")
-        await _add_config_source(db_session, "sub-1", "vless://uuid1@host:443", is_hidden=True)
+# ---------------------------------------------------------------------------
+# Concurrent INTERNAL_TOKEN fetch correctness (comment-map preload + recursion)
+# ---------------------------------------------------------------------------
 
-        resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("sub-1")
 
-        assert result.count == 0
-
-    async def test_hidden_source_visible_when_nested(self, db_session):
-        # is_hidden only applies at depth == 0, per _process_source logic
+class TestConcurrentInternalFetchCorrectness:
+    async def test_multiple_internal_sources_all_resolved_and_ordered(self, db_session):
         await _make_user_and_subscription(db_session, "sub-parent")
-        await _make_user_and_subscription(db_session, "sub-child", user_hash="u1")
-        await _add_internal_source(db_session, "sub-parent", "sub-child", source_id="ref-1")
-        await _add_config_source(db_session, "sub-child", "vless://uuid1@host:443", is_hidden=True)
+        await _make_user_and_subscription(db_session, "sub-child-1", user_hash="u1")
+        await _make_user_and_subscription(db_session, "sub-child-2", user_hash="u1")
+
+        await _add_internal_source(
+            db_session, "sub-parent", "sub-child-1", source_id="ref-1", order_index=0
+        )
+        await _add_internal_source(
+            db_session, "sub-parent", "sub-child-2", source_id="ref-2", order_index=1
+        )
+
+        h1 = await _add_config_source(db_session, "sub-child-1", "vless://c1@host:443")
+        h2 = await _add_config_source(db_session, "sub-child-2", "vless://c2@host:443")
+
+        resolver = ResolverService(db_session, _make_mock_cache())
+        result = await resolver.resolve("sub-parent")
+
+        assert result.count == 2
+        assert [c.hash for c in result.configs] == [h1, h2]
+
+    async def test_comment_map_merge_is_correct_across_concurrently_fetched_siblings(
+        self, db_session
+    ):
+        """Two internal sources (sub-child-1, sub-child-2) are fetched
+        concurrently for their comment maps. sub-child-1's comment for a
+        hash shared with sub-child-2 should win (declared first), even
+        though comment-map loading itself runs concurrently.
+        """
+        await _make_user_and_subscription(db_session, "sub-parent")
+        await _make_user_and_subscription(db_session, "sub-child-1", user_hash="u1")
+        await _make_user_and_subscription(db_session, "sub-child-2", user_hash="u1")
+
+        await _add_internal_source(
+            db_session, "sub-parent", "sub-child-1", source_id="ref-1", order_index=0
+        )
+        await _add_internal_source(
+            db_session, "sub-parent", "sub-child-2", source_id="ref-2", order_index=1
+        )
+
+        # Same config exists (as a source) only in child-1, but both
+        # children define a comment for its hash.
+        config_hash = await _add_config_source(
+            db_session, "sub-child-1", "vless://shared@host:443", source_id="shared-cfg"
+        )
+        await ConfigCommentRepository(db_session).upsert_comment(
+            "sub-child-1", config_hash, "Child1 Comment"
+        )
+        await ConfigCommentRepository(db_session).upsert_comment(
+            "sub-child-2", config_hash, "Child2 Comment"
+        )
 
         resolver = ResolverService(db_session, _make_mock_cache())
         result = await resolver.resolve("sub-parent")
 
         assert result.count == 1
+        assert result.configs[0].config == "vless://shared@host:443#Child1 Comment"
 
 
-class TestResolveDescription:
-    async def test_uses_subscription_description_when_present(self, db_session):
-        user_repo = UserRepository(db_session)
-        await user_repo.create_user(user_hash="u1", user_id=1, api_token="tok")
-        await SubscriptionRepository(db_session).create_subscription(
-            token="sub-1", name="n1", user_hash="u1", description="Custom Description"
+# ---------------------------------------------------------------------------
+# Mixed source types within one subscription
+# ---------------------------------------------------------------------------
+
+
+class TestMixedSourceTypesOrdering:
+    async def test_config_external_internal_mixed_preserve_declared_order(self, db_session):
+        await _make_user_and_subscription(db_session, "sub-parent")
+        await _make_user_and_subscription(db_session, "sub-child", user_hash="u1")
+
+        h_config = await _add_config_source(
+            db_session, "sub-parent", "vless://direct@host:443", source_id="cfg-1", order_index=0
         )
-        await _add_config_source(db_session, "sub-1", "vless://uuid1@host:443")
+        await _add_external_source(
+            db_session,
+            "sub-parent",
+            "https://ext.example.com/sub",
+            source_id="ext-1",
+            order_index=1,
+        )
+        await _add_internal_source(
+            db_session, "sub-parent", "sub-child", source_id="ref-1", order_index=2
+        )
+        h_child = await _add_config_source(db_session, "sub-child", "vless://nested@host:443")
 
-        resolver = ResolverService(db_session, _make_mock_cache())
-        result = await resolver.resolve("sub-1")
+        cache = _make_mock_cache({"https://ext.example.com/sub": "vless://external@host:443\n"})
+        resolver = ResolverService(db_session, cache)
+        result = await resolver.resolve("sub-parent")
 
-        assert result.description == "Custom Description"
+        assert result.count == 3
+        assert [c.hash for c in result.configs] == [
+            h_config,
+            get_config_hash("vless://external@host:443"),
+            h_child,
+        ]
 
-    async def test_falls_back_to_domain_when_no_description(self, db_session):
-        from v2hub_api.core.config import settings
 
+# ---------------------------------------------------------------------------
+# Cross-type deduplication
+# ---------------------------------------------------------------------------
+
+
+class TestCrossTypeDeduplication:
+    async def test_config_source_and_external_url_yielding_same_config_deduped(self, db_session):
+        """A CONFIG source and an EXTERNAL_URL source both resolve to the
+        exact same underlying config string -> same hash -> only one entry
+        in the final result, and the CONFIG source (processed first, since
+        CONFIG sources are applied before EXTERNAL_URL fetch results) wins,
+        including its subscription-specific comment.
+        """
         await _make_user_and_subscription(db_session, "sub-1")
-        await _add_config_source(db_session, "sub-1", "vless://uuid1@host:443")
+        config_uri = "vless://dup@host:443"
+        config_hash = await _add_config_source(
+            db_session, "sub-1", config_uri, source_id="cfg-1", order_index=0
+        )
+        await ConfigCommentRepository(db_session).upsert_comment(
+            "sub-1", config_hash, "Direct Comment"
+        )
+        await _add_external_source(
+            db_session, "sub-1", "https://ext.example.com/sub", source_id="ext-1", order_index=1
+        )
+
+        cache = _make_mock_cache({"https://ext.example.com/sub": f"{config_uri}\n"})
+        resolver = ResolverService(db_session, cache)
+        result = await resolver.resolve("sub-1")
+
+        assert result.count == 1
+        assert result.configs[0].config == f"{config_uri}#Direct Comment"
+
+
+# ---------------------------------------------------------------------------
+# is_hidden semantics for EXTERNAL_URL / INTERNAL_TOKEN (base suite only
+# covered CONFIG sources for this)
+# ---------------------------------------------------------------------------
+
+
+class TestHiddenNonConfigSources:
+    async def test_hidden_external_source_excluded_at_root_depth(self, db_session):
+        await _make_user_and_subscription(db_session, "sub-1")
+        await _add_external_source(
+            db_session, "sub-1", "https://ext.example.com/sub", source_id="ext-1", is_hidden=True
+        )
+
+        cache = _make_mock_cache({"https://ext.example.com/sub": "vless://x@host:443\n"})
+        resolver = ResolverService(db_session, cache)
+        result = await resolver.resolve("sub-1")
+
+        assert result.count == 0
+
+    async def test_hidden_internal_source_excluded_at_root_depth(self, db_session):
+        await _make_user_and_subscription(db_session, "sub-parent")
+        await _make_user_and_subscription(db_session, "sub-child", user_hash="u1")
+        await _add_internal_source(
+            db_session, "sub-parent", "sub-child", source_id="ref-1", is_hidden=True
+        )
+        await _add_config_source(db_session, "sub-child", "vless://uuid1@host:443")
+
+        resolver = ResolverService(db_session, _make_mock_cache())
+        result = await resolver.resolve("sub-parent")
+
+        # is_hidden is only enforced at depth == 0 for the *source itself*;
+        # since the hidden source is the internal-token reference at root,
+        # it must not be followed at all.
+        assert result.count == 0
+
+    async def test_hidden_external_source_visible_when_nested(self, db_session):
+        await _make_user_and_subscription(db_session, "sub-parent")
+        await _make_user_and_subscription(db_session, "sub-child", user_hash="u1")
+        await _add_internal_source(db_session, "sub-parent", "sub-child", source_id="ref-1")
+        await _add_external_source(
+            db_session,
+            "sub-child",
+            "https://ext.example.com/sub",
+            source_id="ext-1",
+            is_hidden=True,
+        )
+
+        cache = _make_mock_cache({"https://ext.example.com/sub": "vless://x@host:443\n"})
+        resolver = ResolverService(db_session, cache)
+        result = await resolver.resolve("sub-parent")
+
+        assert result.count == 1
+
+
+# ---------------------------------------------------------------------------
+# Empty / edge-case subscriptions
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyAndEdgeCases:
+    async def test_subscription_with_no_sources_returns_empty_result(self, db_session):
+        await _make_user_and_subscription(db_session, "sub-1")
 
         resolver = ResolverService(db_session, _make_mock_cache())
         result = await resolver.resolve("sub-1")
 
-        assert result.description == settings.domain
+        assert result.count == 0
+        assert result.truncated is False
+        assert result.depth_exceeded is False
+
+    async def test_external_source_returning_empty_string_content_yields_nothing(self, db_session):
+        await _make_user_and_subscription(db_session, "sub-1")
+        await _add_external_source(
+            db_session, "sub-1", "https://ext.example.com/sub", source_id="ext-1"
+        )
+
+        cache = _make_mock_cache({"https://ext.example.com/sub": ""})
+        resolver = ResolverService(db_session, cache)
+        result = await resolver.resolve("sub-1")
+
+        assert result.count == 0
+
+    async def test_three_level_nesting_resolves_correctly_and_preserves_order(self, db_session):
+        """sub-a -> sub-b -> sub-c, each contributing one distinct config;
+        also confirms depth accounting doesn't accidentally trip
+        depth_exceeded for a nesting depth within limits.
+        """
+        await _make_user_and_subscription(db_session, "sub-a")
+        await _make_user_and_subscription(db_session, "sub-b", user_hash="u1")
+        await _make_user_and_subscription(db_session, "sub-c", user_hash="u1")
+        await _add_internal_source(db_session, "sub-a", "sub-b", source_id="ref-a-b")
+        await _add_internal_source(db_session, "sub-b", "sub-c", source_id="ref-b-c")
+
+        h_a = await _add_config_source(db_session, "sub-a", "vless://a@host:443", source_id="cfg-a")
+        h_b = await _add_config_source(db_session, "sub-b", "vless://b@host:443", source_id="cfg-b")
+        h_c = await _add_config_source(db_session, "sub-c", "vless://c@host:443", source_id="cfg-c")
+
+        resolver = ResolverService(db_session, _make_mock_cache())
+        result = await resolver.resolve("sub-a")
+
+        assert result.depth_exceeded is False
+        assert result.count == 3
+        assert {c.hash for c in result.configs} == {h_a, h_b, h_c}

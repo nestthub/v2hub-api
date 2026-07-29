@@ -9,6 +9,7 @@ Handles all subscription-related operations including:
 - Reference cycle detection
 """
 
+import asyncio
 import logging
 from datetime import timedelta
 from typing import Annotated, Any
@@ -583,26 +584,16 @@ class SubscriptionService:
     ) -> RefreshSubscriptionResponse:
         """
         Manually refresh all external URLs in subscription.
-
         Fetches fresh content from all EXTERNAL_URL sources and updates cache.
         Does NOT affect CONFIG or INTERNAL_TOKEN sources.
-
-        Args:
-            token: Subscription token
-            user_hash: Requesting user's hash
-
-        Returns:
-            Dict with refresh statistics
         """
         subscription = await self.get_subscription(token, user_hash)
 
-        # Import cache service
         from v2hub_api.services.cache_service import CacheService, get_redis_client
 
         redis = await get_redis_client()
         cache_service = CacheService(self.session, redis)
 
-        # Find all EXTERNAL_URL sources
         external_urls = {
             source.id: source.external_url
             for source in subscription.sources
@@ -632,33 +623,51 @@ class SubscriptionService:
         for h in to_remove:
             external_urls.pop(h)
 
-        # Refresh each URL
         refreshed = 0
         failed = 0
         errors = []
         incorrect_links = set()
 
-        for hash, url in external_urls.items():
-            try:
-                await cache_service.refresh(url)
-                refreshed += 1
-                logger.info(f"Refreshed {url}")
-            except Exception as e:
-                incorrect_links.add(hash)
-                failed += 1
-                errors.append(f"{url}: {e!s}")
-                logger.error(f"Failed to refresh {url}: {e}")
+        semaphore = asyncio.Semaphore(10)
 
-        await self.remove_sources(
-            token=token, user_hash=user_hash, source_ids=list(incorrect_links)
-        )
+        async def refresh_one(source_hash: str, url: str) -> tuple[str, bool, str | None]:
+            async with semaphore:
+                try:
+                    await cache_service.refresh(url)
+                    logger.info("Refreshed %s", url)
+                    return source_hash, True, None
+
+                except Exception as e:
+                    logger.error("Failed to refresh %s: %s", url, e)
+                    return source_hash, False, f"{url}: {e!s}"
+
+        results = await asyncio.gather(*(refresh_one(h, url) for h, url in external_urls.items()))
+
+        for source_hash, success, error in results:
+            if success:
+                refreshed += 1
+            else:
+                failed += 1
+                incorrect_links.add(source_hash)
+                errors.append(error)
+
+        if incorrect_links:
+            await self.remove_sources(
+                token=token,
+                user_hash=user_hash,
+                source_ids=list(incorrect_links),
+            )
 
         subscription.updated_at = utcnow()
 
         await self.session.commit()
 
         return RefreshSubscriptionResponse(
-            refreshed=refreshed, failed=failed, skipped=skipped, errors=errors, message=None
+            refreshed=refreshed,
+            failed=failed,
+            skipped=skipped,
+            errors=errors,
+            message=None,
         )
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -941,10 +950,8 @@ class SubscriptionService:
 
         # Check for circular references
         await self._check_circular_reference(
-            owner_token=subscription_token,
             target_token=internal_token,
-            visited=frozenset({subscription_token}),
-            depth=0,
+            visited={subscription_token},
         )
 
         source_id = get_url_hash(url)
@@ -990,35 +997,55 @@ class SubscriptionService:
 
     async def _check_circular_reference(
         self,
-        owner_token: str,
         target_token: str,
-        visited: frozenset[str],
-        depth: int,
+        visited: set[str],
+        checked: dict[str, int] | None = None,  # token -> max depth-budget it was verified for
+        depth: int = 0,
     ) -> None:
         """
         Check for circular references using DFS.
+        `checked` memoizes subtrees already verified acyclic, keyed by the
+        remaining depth-budget they were checked with (max_depth - depth).
+        A memoized result is reused only if it covers at least as much
+        remaining budget as the current call needs — otherwise we couldn't
+        guarantee NestingTooDeepError would still fire correctly.
         """
+        if checked is None:
+            checked = {}
         max_depth = settings.max_nesting_depth
 
         if depth > max_depth:
             raise NestingTooDeepError(depth, max_depth)
 
         if target_token in visited:
-            chain = [*list(visited), target_token]
+            chain = [*visited, target_token]
             raise CircularReferenceError(chain)
 
-        target = await self.subscription_repo.get_by_token(target_token, load_sources=True)
-
-        if not target:
+        remaining_budget = max_depth - depth
+        if checked.get(target_token, -1) >= remaining_budget:
             return
 
-        new_visited = visited | {target_token}
+        target = await self.subscription_repo.get_by_token(
+            target_token,
+            load_sources=True,
+        )
 
-        for source in target.sources:
-            if source.source_type == SourceType.INTERNAL_TOKEN.value and source.internal_token:
-                await self._check_circular_reference(
-                    owner_token=owner_token,
-                    target_token=source.internal_token,
-                    visited=new_visited,
-                    depth=depth + 1,
-                )
+        if not target:
+            checked[target_token] = remaining_budget
+            return
+
+        visited.add(target_token)
+
+        try:
+            for source in target.sources:
+                if source.source_type == SourceType.INTERNAL_TOKEN.value and source.internal_token:
+                    await self._check_circular_reference(
+                        target_token=source.internal_token,
+                        visited=visited,
+                        checked=checked,
+                        depth=depth + 1,
+                    )
+        finally:
+            visited.remove(target_token)
+
+        checked[target_token] = remaining_budget
