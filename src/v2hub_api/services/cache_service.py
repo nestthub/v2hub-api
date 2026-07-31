@@ -59,55 +59,16 @@ class CacheService:
         self.redis_ttl = settings.redis_ttl
         self.redis_prefix = "sub:"
 
-    async def get_or_fetch(self, url: str) -> str | None:
+    async def get_or_fetch(self, url: str, refresh: bool = False) -> str | None:
         """
-        Get subscription content from cache or fetch if not cached.
-
-        Cache strategy:
-        1. Try Redis (L1)
-        2. Try PostgreSQL (L2), restore to Redis
-        3. Fetch from URL, store in both caches
-
-        Args:
-            url: External subscription URL
-
-        Returns:
-            Raw subscription content
-
-        Raises:
-            ExternalFetchError: If fetch fails and no cache available
+        Get cached content, or fetch fresh content if:
+        - `refresh=True` (force bypass cache)
         """
         url_hash = get_url_hash(url)
 
-        # Try L1 cache (Redis)
-        if self.redis:
-            try:
-                cached = await self._get_from_redis(url_hash)
-                if cached is not None:
-                    logger.debug(f"Cache hit (L1) for {url}")
-                    return cached
-            except Exception as e:
-                logger.warning(f"Redis error: {e}")
+        if not refresh:
+            return await self.get_from_cache_only(url)
 
-        # Try L2 cache (PostgreSQL)
-        try:
-            cached = await self._get_from_db(url_hash)
-            if cached is not None:
-                logger.debug(f"Cache hit (L2) for {url}")
-
-                # Restore to L1
-                if self.redis:
-                    try:
-                        await self._set_to_redis(url_hash, cached)
-                    except Exception as e:
-                        logger.warning(f"Failed to restore to Redis: {e}")
-
-                return cached
-        except Exception as e:
-            logger.warning(f"Database cache error: {e}")
-
-        # Cache miss - fetch from URL
-        logger.info(f"Cache miss for {url}, fetching...")
         return await self._fetch_and_cache(url, url_hash)
 
     async def get_from_cache_only(self, url: str) -> str | None:
