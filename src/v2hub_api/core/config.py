@@ -7,7 +7,7 @@ BaseSettings for type safety and validation.
 
 from functools import lru_cache
 
-from pydantic import Field, PostgresDsn, RedisDsn, field_validator
+from pydantic import Field, PostgresDsn, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from v2hub_api import __version__
@@ -154,22 +154,6 @@ class Settings(BaseSettings):
         default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         validation_alias="LOG_FORMAT",
     )
-
-    # ═══ Celery (Optional) ═════════════════════════════════════════════════
-    celery_broker_url: str | None = Field(default=None, validation_alias="CELERY_BROKER_URL")
-    celery_result_backend: str | None = Field(
-        default=None, validation_alias="CELERY_RESULT_BACKEND"
-    )
-
-    @field_validator(
-        "cors_origins", "cors_methods", "cors_headers", "admin_allowed_ips", mode="before"
-    )
-    @classmethod
-    def parse_cors_list(cls, v: str | list[str]) -> list[str]:
-        """Parse comma-separated string into list."""
-        if isinstance(v, str):
-            return [item.strip() for item in v.split(",") if item.strip()]
-        return v
 
     @property
     def database_url_str(self) -> str:

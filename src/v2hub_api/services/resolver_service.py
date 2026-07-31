@@ -309,7 +309,7 @@ class ResolverService:
 
         try:
             # Get from cache only (no HTTP fetch)
-            content = await self.cache.get_from_cache_only(url)
+            content = await self.cache.get_or_fetch(url)
 
             if content is None:
                 # No cached content available

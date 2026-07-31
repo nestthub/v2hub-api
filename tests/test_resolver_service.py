@@ -109,25 +109,23 @@ async def _add_external_source(
 
 
 def _make_mock_cache(
-    cache_contents: dict[str, str] | None = None, delays: dict[str, float] | None = None
+    cache_contents: dict[str, str] | None = None,
+    delays: dict[str, float] | None = None,
 ):
-    """Mock CacheService.get_from_cache_only.
-
-    `delays` lets tests simulate different latencies per URL so we can prove
-    that result ordering/limits do not depend on completion order under the
-    concurrent (asyncio.gather) fetch path.
-    """
     mock = AsyncMock()
+
     contents = cache_contents or {}
     delays = delays or {}
 
-    async def _get_from_cache_only(url):
+    async def _get(url):
         delay = delays.get(url)
         if delay:
             await asyncio.sleep(delay)
         return contents.get(url)
 
-    mock.get_from_cache_only.side_effect = _get_from_cache_only
+    mock.get_from_cache_only.side_effect = _get
+    mock.get_or_fetch.side_effect = _get
+
     return mock
 
 
@@ -429,14 +427,15 @@ class TestConcurrentExternalFetchCorrectness:
 
         cache = AsyncMock()
 
-        async def _get_from_cache_only(url):
+        async def _get(url):
             if url == "https://broken.example.com/sub":
                 raise RuntimeError("simulated cache failure")
             if url == "https://ok.example.com/sub":
                 return "vless://ok@host:443\n"
             return None
 
-        cache.get_from_cache_only.side_effect = _get_from_cache_only
+        cache.get_from_cache_only.side_effect = _get
+        cache.get_or_fetch.side_effect = _get
 
         resolver = ResolverService(db_session, cache)
         result = await resolver.resolve("sub-1")

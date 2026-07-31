@@ -28,30 +28,6 @@ services:
       - frontend
       - monitoring
 
-  worker:
-    <<: *app-build
-    command: >
-      celery -A worker.celery_app worker
-      --loglevel=info
-      --concurrency=3
-      --queues=celery
-    restart: unless-stopped
-    networks:
-      - backend
-      - frontend
-
-  beat:
-    <<: *app-build
-    command: >
-      celery -A worker.celery_app beat
-      --loglevel=info
-      --schedule=/app/celerybeat/schedule.db
-    volumes:
-      - celerybeat_data:/app/celerybeat
-    restart: unless-stopped
-    networks:
-      - backend
-
   postgres:
     image: postgres:16-alpine
     environment:
@@ -181,7 +157,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  celerybeat_data:
     #  grafanadata:
     #  prometheusdata:
     #  lokidata:
