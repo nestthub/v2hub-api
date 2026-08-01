@@ -1497,5 +1497,5 @@ Default configuration limits (can be customized via environment variables):
 
 For issues, questions, or feature requests, please contact the API maintainer or open an issue in the project repository.
 
-**API Version**: 1.0.0
-**Last Updated**: July 16, 2026
+**API Version**: 1.0.4
+**Last Updated**: August 1, 2026

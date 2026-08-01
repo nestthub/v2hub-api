@@ -223,7 +223,7 @@ class ResolverService:
         # EXTERNAL_URL sources: fetch from cache concurrently. Fetching is
         # pure I/O with no shared-state mutation, so it's safe to parallelize.
         now = utcnow()
-        cooldown = timedelta(minutes=15)
+        cooldown = timedelta(seconds=settings.refresh_cooldown)
 
         if external_sources:
             external_update_date = {

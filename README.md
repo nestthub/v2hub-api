@@ -364,7 +364,7 @@ Create a `.env` file in the project root:
 # Core
 # ─────────────────────────────
 APP_NAME=v2hub
-APP_VERSION=1.0.0
+APP_VERSION=1.0.4
 ENVIRONMENT=production
 DEBUG=false
 

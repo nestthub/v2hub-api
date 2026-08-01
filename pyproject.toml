@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "v2hub-api"
-version = "1.0.3"
+version = "1.0.4"
 description = "API backend for V2Hub subscription management"
 readme = "README.md"
 license = { text = "MIT" }
@@ -47,7 +47,6 @@ dependencies = [
     "pydantic>=2.13.3,<3.0",
     "pydantic-settings>=2.14.0,<3.0",
     "redis[hiredis]>=7.4.0,<8.0",
-    "celery>=5.4.0",
     "ruff>=0.16.0",
     "scalar-fastapi>=1.8.2,<2.0",
     "sqlalchemy[asyncio]>=2.0.49,<3.0",

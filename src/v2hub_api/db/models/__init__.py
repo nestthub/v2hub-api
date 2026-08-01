@@ -1,4 +1,4 @@
-from .base import Base, TimestampMixin
+from .base import Base, TimestampMixin, utcnow
 from .config_comments import ConfigComment
 from .external_cache import ExternalCache
 from .proxy_config import ProxyConfig
@@ -15,4 +15,5 @@ __all__ = [
     "Subscription",
     "TimestampMixin",
     "User",
+    "utcnow",
 ]

@@ -134,13 +134,29 @@ class Settings(BaseSettings):
     )
 
     # ═══ External Fetching ═════════════════════════════════════════════════
-    fetch_timeout: int = Field(
-        default=3,
+    refresh_cooldown: int = Field(
+        default=900,
+        validation_alias="REFRESH_COOLDOWN",
+        description="Minimum interval between lazy refreshes of external subscriptions (seconds)",
+    )
+
+    fetch_timeout: int | float = Field(
+        default=1,
         validation_alias="FETCH_TIMEOUT",
         description="HTTP timeout for external subscriptions (seconds)",
     )
-    fetch_user_agent: str = Field(default="v2hub/1.0", validation_alias="FETCH_USER_AGENT")
-    fetch_max_redirects: int = Field(default=1, validation_alias="FETCH_MAX_REDIRECTS")
+
+    fetch_user_agent: str = Field(
+        default="v2hub/1.0",
+        validation_alias="FETCH_USER_AGENT",
+        description="User-Agent for external subscription requests",
+    )
+
+    fetch_max_redirects: int = Field(
+        default=1,
+        validation_alias="FETCH_MAX_REDIRECTS",
+        description="Maximum number of redirects for external subscription requests",
+    )
 
     # ═══ CORS ══════════════════════════════════════════════════════════════
     cors_origins: list[str] = Field(default_factory=lambda: ["*"], validation_alias="CORS_ORIGINS")

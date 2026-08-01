@@ -23,7 +23,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 def utcnow() -> datetime:
     """Get current UTC datetime."""
-    return datetime.now(UTC)
+    return datetime.now(tz=UTC)
 
 
 class Base(DeclarativeBase):
