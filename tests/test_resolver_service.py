@@ -111,7 +111,13 @@ async def _add_external_source(
 def _make_mock_cache(
     cache_contents: dict[str, str] | None = None, delays: dict[str, float] | None = None
 ):
-    """Mock CacheService.get_from_cache_only.
+    """Mock CacheService.get_or_fetch(url, refresh).
+
+    The resolver now calls `cache.get_or_fetch(url, refresh)` (two positional
+    args) rather than the old `get_from_cache_only(url)`. It also decides
+    `refresh` itself based on `external_cache.updated_at` vs a cooldown; since
+    these tests don't create `external_cache` rows, `refresh` will always be
+    True here — the mock must return content regardless of `refresh`'s value.
 
     `delays` lets tests simulate different latencies per URL so we can prove
     that result ordering/limits do not depend on completion order under the
@@ -121,13 +127,13 @@ def _make_mock_cache(
     contents = cache_contents or {}
     delays = delays or {}
 
-    async def _get_from_cache_only(url):
+    async def _get_or_fetch(url, refresh=False):
         delay = delays.get(url)
         if delay:
             await asyncio.sleep(delay)
         return contents.get(url)
 
-    mock.get_from_cache_only.side_effect = _get_from_cache_only
+    mock.get_or_fetch.side_effect = _get_or_fetch
     return mock
 
 
@@ -429,14 +435,14 @@ class TestConcurrentExternalFetchCorrectness:
 
         cache = AsyncMock()
 
-        async def _get_from_cache_only(url):
+        async def _get_or_fetch(url, refresh=False):
             if url == "https://broken.example.com/sub":
                 raise RuntimeError("simulated cache failure")
             if url == "https://ok.example.com/sub":
                 return "vless://ok@host:443\n"
             return None
 
-        cache.get_from_cache_only.side_effect = _get_from_cache_only
+        cache.get_or_fetch.side_effect = _get_or_fetch
 
         resolver = ResolverService(db_session, cache)
         result = await resolver.resolve("sub-1")

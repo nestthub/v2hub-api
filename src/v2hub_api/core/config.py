@@ -7,7 +7,7 @@ BaseSettings for type safety and validation.
 
 from functools import lru_cache
 
-from pydantic import Field, PostgresDsn, RedisDsn, field_validator
+from pydantic import Field, PostgresDsn, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from v2hub_api import __version__
@@ -134,13 +134,29 @@ class Settings(BaseSettings):
     )
 
     # ═══ External Fetching ═════════════════════════════════════════════════
-    fetch_timeout: int = Field(
-        default=3,
+    refresh_cooldown: int = Field(
+        default=900,
+        validation_alias="REFRESH_COOLDOWN",
+        description="Minimum interval between lazy refreshes of external subscriptions (seconds)",
+    )
+
+    fetch_timeout: int | float = Field(
+        default=1,
         validation_alias="FETCH_TIMEOUT",
         description="HTTP timeout for external subscriptions (seconds)",
     )
-    fetch_user_agent: str = Field(default="v2hub/1.0", validation_alias="FETCH_USER_AGENT")
-    fetch_max_redirects: int = Field(default=1, validation_alias="FETCH_MAX_REDIRECTS")
+
+    fetch_user_agent: str = Field(
+        default="v2hub/1.0",
+        validation_alias="FETCH_USER_AGENT",
+        description="User-Agent for external subscription requests",
+    )
+
+    fetch_max_redirects: int = Field(
+        default=1,
+        validation_alias="FETCH_MAX_REDIRECTS",
+        description="Maximum number of redirects for external subscription requests",
+    )
 
     # ═══ CORS ══════════════════════════════════════════════════════════════
     cors_origins: list[str] = Field(default_factory=lambda: ["*"], validation_alias="CORS_ORIGINS")
@@ -154,22 +170,6 @@ class Settings(BaseSettings):
         default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         validation_alias="LOG_FORMAT",
     )
-
-    # ═══ Celery (Optional) ═════════════════════════════════════════════════
-    celery_broker_url: str | None = Field(default=None, validation_alias="CELERY_BROKER_URL")
-    celery_result_backend: str | None = Field(
-        default=None, validation_alias="CELERY_RESULT_BACKEND"
-    )
-
-    @field_validator(
-        "cors_origins", "cors_methods", "cors_headers", "admin_allowed_ips", mode="before"
-    )
-    @classmethod
-    def parse_cors_list(cls, v: str | list[str]) -> list[str]:
-        """Parse comma-separated string into list."""
-        if isinstance(v, str):
-            return [item.strip() for item in v.split(",") if item.strip()]
-        return v
 
     @property
     def database_url_str(self) -> str:

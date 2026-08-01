@@ -125,7 +125,7 @@ class TestGetOrFetch:
         http_client = _make_mock_http_client({url: "vless://fresh@host:443"})
         service = CacheService(db_session, redis_client=redis, http_client=http_client)
 
-        result = await service.get_or_fetch(url)
+        result = await service.get_or_fetch(url, refresh=True)
 
         assert result == "vless://fresh@host:443"
         http_client.fetch.assert_called_once_with(url)
@@ -146,7 +146,7 @@ class TestGetOrFetch:
         service = CacheService(db_session, redis_client=None, http_client=http_client)
 
         with pytest.raises(ExternalFetchError):
-            await service.get_or_fetch(url)
+            await service.get_or_fetch(url, refresh=True)
 
         db_entry = await service.cache_repo.get_by_url(url)
         assert db_entry is not None

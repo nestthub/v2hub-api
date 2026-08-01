@@ -1,10 +1,9 @@
-from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy import CursorResult, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from v2hub_api.db.models import ExternalCache
+from v2hub_api.db.models import ExternalCache, utcnow
 from v2hub_api.db.repositories.base import BaseRepository
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -37,7 +36,7 @@ class ExternalCacheRepository(BaseRepository[ExternalCache]):
         if existing:
             update_data: dict[str, Any] = {"url": url}
             if raw_content is not None:
-                update_data.update({"raw_content": raw_content, "fetched_at": datetime.now(tz=UTC)})
+                update_data.update({"raw_content": raw_content, "fetched_at": utcnow()})
             elif last_error is not None:
                 update_data.update(
                     {"last_error": last_error, "error_count": existing.error_count + 1}

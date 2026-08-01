@@ -18,17 +18,19 @@ Performance:
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from v2hub_api.core.config import settings
 from v2hub_api.core.enums import SourceType
 from v2hub_api.db.models import Source
+from v2hub_api.db.models.base import utcnow
 from v2hub_api.db.repositories import (
     ConfigCommentRepository,
     SubscriptionRepository,
 )
+from v2hub_api.db.repositories.external_cache_repository import ExternalCacheRepository
 from v2hub_api.schemas import ResolvedConfig
 from v2hub_api.services.cache_service import CacheService
 from v2hub_api.utils.config_parser import get_config_hash, parse_subscription_content
@@ -101,6 +103,7 @@ class ResolverService:
         self.cache = cache_service
         self.subscription_repo = SubscriptionRepository(session)
         self.comment_repo = ConfigCommentRepository(session)
+        self.external_repo = ExternalCacheRepository(session)
 
         self.max_depth = settings.max_nesting_depth
         self.max_configs = settings.max_configs_per_subscription
@@ -219,15 +222,41 @@ class ResolverService:
 
         # EXTERNAL_URL sources: fetch from cache concurrently. Fetching is
         # pure I/O with no shared-state mutation, so it's safe to parallelize.
+        now = utcnow()
+        cooldown = timedelta(seconds=settings.refresh_cooldown)
+
         if external_sources:
-            fetch_external_results = await asyncio.gather(
-                *(self._fetch_external_source(source) for source in external_sources)
-            )
+            external_update_date = {
+                data.url_hash: data.updated_at
+                for data in await self.external_repo.get_all_by_field(
+                    self.external_repo.model.url_hash,
+                    [source.external_url for source in external_sources],
+                )
+            }
+
+            fetch_tasks = []
+
+            for source in external_sources:
+                updated_at = external_update_date.get(source.id)
+                should_refresh = False
+                if updated_at is None or now - updated_at >= cooldown:
+                    should_refresh = True
+
+                fetch_tasks.append(
+                    self._fetch_external_source(
+                        source,
+                        refresh=should_refresh,
+                    )
+                )
+
+            fetch_external_results = await asyncio.gather(*fetch_tasks)
+
             # Apply sequentially, in original order, to preserve dedup/limit semantics.
             for ext_outcome in fetch_external_results:
                 if len(result.configs) >= self.max_configs:
                     result.truncated = True
                     return
+
                 self._apply_external_outcome(ext_outcome, result)
 
         # INTERNAL_TOKEN sources: first concurrently load each nested
@@ -297,7 +326,9 @@ class ResolverService:
     # EXTERNAL_URL sources
     # ------------------------------------------------------------------
 
-    async def _fetch_external_source(self, source: Source) -> _ExternalFetchOutcome:
+    async def _fetch_external_source(
+        self, source: Source, refresh: bool = False
+    ) -> _ExternalFetchOutcome:
         """
         Fetch + parse an EXTERNAL_URL source's content. Pure I/O + parsing,
         does not touch `result`, so safe to run concurrently with siblings.
@@ -308,8 +339,7 @@ class ResolverService:
             return _ExternalFetchOutcome(source=source, configs=[])
 
         try:
-            # Get from cache only (no HTTP fetch)
-            content = await self.cache.get_from_cache_only(url)
+            content = await self.cache.get_or_fetch(url, refresh)
 
             if content is None:
                 # No cached content available

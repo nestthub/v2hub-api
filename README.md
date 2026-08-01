@@ -99,11 +99,6 @@ alembic upgrade head
 # Start the API server
 uvicorn v2hub_api.main:app --reload --host 0.0.0.0 --port 8000
 
-# Start Celery worker (in another terminal)
-celery -A worker.celery_app worker --loglevel=info
-
-# Start Celery beat scheduler (in another terminal)
-celery -A worker.celery_app beat --loglevel=info
 ```
 
 ---
@@ -195,9 +190,6 @@ v2hub-api/
 │       │   └── url_validator.py         # URL / SSRF validation
 │       ├── py.typed
 │       └── main.py                      # Application entry point
-├── worker/
-│   ├── celery_app.py                    # Celery configuration
-│   └── tasks/                           # Background tasks
 ├── alembic/
 │   ├── env.py
 │   └── versions/                        # Database migrations
@@ -357,11 +349,6 @@ Client Request
    # Terminal 1: API
    uvicorn v2hub_api.main:app --reload
 
-   # Terminal 2: Celery Worker
-   celery -A worker.celery_app worker --loglevel=info
-
-   # Terminal 3: Celery Beat
-   celery -A worker.celery_app beat --loglevel=info
    ```
 
 ---
@@ -377,7 +364,7 @@ Create a `.env` file in the project root:
 # Core
 # ─────────────────────────────
 APP_NAME=v2hub
-APP_VERSION=1.0.0
+APP_VERSION=1.0.4
 ENVIRONMENT=production
 DEBUG=false
 
@@ -1060,7 +1047,6 @@ Built with:
 - [FastAPI](https://fastapi.tiangolo.com/) - Modern web framework
 - [SQLAlchemy](https://www.sqlalchemy.org/) - SQL toolkit and ORM
 - [Pydantic](https://docs.pydantic.dev/) - Data validation
-- [Celery](https://docs.celeryq.dev/) - Distributed task queue
 - [Redis](https://redis.io/) - In-memory data structure store
 - [PostgreSQL](https://www.postgresql.org/) - Relational database
 - [Prometheus](https://prometheus.io/) - Metrics and alerting

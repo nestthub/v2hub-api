@@ -206,7 +206,7 @@ class SubscriptionHTTPClient:
 
     def __init__(
         self,
-        timeout: int = settings.fetch_timeout,
+        timeout: int | float = settings.fetch_timeout,
         user_agent: str = settings.fetch_user_agent,
         max_bytes: int = getattr(settings, "fetch_max_bytes", 2 * 1024 * 1024),
     ) -> None:
