@@ -193,3 +193,10 @@ exclude_lines = [
     "@abstractmethod",
     "@overload",
 ]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]

@@ -15,10 +15,12 @@ import hashlib
 import hmac
 import logging
 import time
+from datetime import datetime
+from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
-from v2hub_api.api.dependencies import UserServiceDep
+from v2hub_api.api.dependencies import StatsServiceDep, UserServiceDep
 from v2hub_api.core.config import settings
 from v2hub_api.core.exceptions import to_http_exception
 from v2hub_api.middlewares.rate_limit_middleware import get_client_ip
@@ -29,6 +31,7 @@ from v2hub_api.schemas import (
     IPBanStatusResponse,
     IPUnbanRequest,
     IPUnbanResponse,
+    StatsResponse,
     TokenRefreshRequest,
     TokenRefreshResponse,
     UserCreateRequest,
@@ -646,3 +649,48 @@ async def list_whitelist(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list whitelist: {e!s}",
         ) from None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Business Metrics & Statistics
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.get(
+    "/stats",
+    response_model=StatsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get API usage statistics",
+    description="Retrieve aggregated business metrics with optional time filtering.",
+)
+async def get_statistics(
+    stats_service: StatsServiceDep,
+    start_date: datetime | None = Query(None, description="Start date (ISO 8601)"),
+    end_date: datetime | None = Query(None, description="End date (ISO 8601)"),
+    period: Literal["day", "week", "month"] | None = Query(None, description="Predefined period"),
+    _signature: None = AdminSecurityDep,
+    _ip: None = InternalIPDep,
+) -> StatsResponse:
+    """
+    Get platform statistics.
+
+    Defaults to all-time stats if no date filters are provided.
+    Protected by admin signature and IP restrictions.
+    """
+    # 1. Fail Fast: Input Validation
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="start_date cannot be after end_date"
+        )
+
+    # 2. Execute Business Logic
+    try:
+        return await stats_service.get_statistics(
+            start_date=start_date, end_date=end_date, period=period
+        )
+    except Exception as e:
+        logger.error(f"Failed to retrieve statistics: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to aggregate statistics",
+        ) from e
