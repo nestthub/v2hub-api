@@ -18,9 +18,9 @@ from v2hub_api.db.models import User
 from v2hub_api.db.session import get_db_session
 from v2hub_api.services.cache_service import CacheService, get_redis_client
 from v2hub_api.services.resolver_service import ResolverService
+from v2hub_api.services.stats_service import StatsService
 from v2hub_api.services.subscription_service import SubscriptionService
 from v2hub_api.services.user_service import UserService
-from v2hub_api.services.stats_service import StatsService
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Database Session
@@ -69,11 +69,13 @@ async def get_user_service(
     """Get user service instance."""
     return UserService(session)
 
+
 async def get_stats_service(
     session: DBSession,
 ) -> StatsService:
     """Get stats service instance."""
     return StatsService(session)
+
 
 StatsServiceDep = Annotated[StatsService, Depends(get_stats_service)]
 
