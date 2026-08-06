@@ -235,7 +235,7 @@ class TestValidateVlessConfig:
         assert err == "Invalid scheme"
 
     def test_missing_server_address(self):
-        ok, err = validate_vless_config("vless://")
+        ok, _err = validate_vless_config("vless://")
         assert ok is False
 
     def test_invalid_uuid_length(self):
@@ -256,7 +256,7 @@ class TestValidateVmessConfig:
         assert err is None
 
     def test_missing_server_address(self):
-        ok, err = validate_vmess_config("vmess://")
+        ok, _err = validate_vmess_config("vmess://")
         assert ok is False
 
     def test_wrong_scheme(self):
@@ -284,11 +284,11 @@ class TestValidateTrojanConfig:
 
 class TestValidateShadowsocksConfig:
     def test_valid_ss_scheme(self):
-        ok, err = validate_shadowsocks_config("ss://base64info@host:8388")
+        ok, _err = validate_shadowsocks_config("ss://base64info@host:8388")
         assert ok is True
 
     def test_valid_shadowsocks_scheme(self):
-        ok, err = validate_shadowsocks_config("shadowsocks://base64info@host:8388")
+        ok, _err = validate_shadowsocks_config("shadowsocks://base64info@host:8388")
         assert ok is True
 
     def test_invalid_scheme(self):
@@ -297,7 +297,7 @@ class TestValidateShadowsocksConfig:
         assert err == "Invalid scheme"
 
     def test_missing_server_address(self):
-        ok, err = validate_shadowsocks_config("ss://")
+        ok, _err = validate_shadowsocks_config("ss://")
         assert ok is False
 
 
@@ -308,7 +308,7 @@ class TestValidateProxyConfig:
         assert err == "Unknown or invalid protocol"
 
     def test_delegates_to_vless_validator(self):
-        ok, err = validate_proxy_config(f"vless://{VALID_UUID}@host:443")
+        ok, _err = validate_proxy_config(f"vless://{VALID_UUID}@host:443")
         assert ok is True
 
     def test_delegates_to_trojan_validator_failure(self):
