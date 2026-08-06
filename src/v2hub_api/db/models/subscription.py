@@ -6,14 +6,14 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     String,
-    UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from v2hub_api.db.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from . import ConfigComment, Source, User
+    from . import ConfigComment, Provider, Source, User
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Subscription Management
@@ -30,8 +30,27 @@ class Subscription(TimestampMixin, Base):
 
     __tablename__ = "subscriptions"
     __table_args__ = (
-        UniqueConstraint("user_hash", "name", name="uq_subscription_user_name"),
-        Index("ix_subscriptions_user_hash", "user_hash"),
+        Index(
+            "uq_user_subscription_name",
+            "user_hash",
+            "name",
+            unique=True,
+            postgresql_where=text("provider_hash IS NULL"),
+            sqlite_where=text("provider_hash IS NULL"),
+        ),
+        Index(
+            "uq_provider_subscription_name",
+            "user_hash",
+            "provider_hash",
+            "name",
+            unique=True,
+            postgresql_where=text("provider_hash IS NOT NULL"),
+            sqlite_where=text("provider_hash IS NOT NULL"),
+        ),
+        Index(
+            "ix_subscriptions_user_hash",
+            "user_hash",
+        ),
     )
 
     token: Mapped[str] = mapped_column(
@@ -45,12 +64,25 @@ class Subscription(TimestampMixin, Base):
         ForeignKey("users.user_hash", ondelete="CASCADE"),
         nullable=False,
     )
+
+    provider_hash: Mapped[str | None] = mapped_column(
+        String(255),
+        ForeignKey("providers.provider_hash", ondelete="CASCADE"),
+        nullable=True,
+        comment="Provider that owns this subscription. NULL for user-owned subscriptions.",
+    )
+
     description: Mapped[str | None] = mapped_column(
         String(64), nullable=True, comment="Optional description of subscription purpose"
     )
 
     # Relationships
     user: Mapped[User] = relationship("User", back_populates="subscriptions")
+    provider: Mapped[Provider | None] = relationship(
+        "Provider",
+        back_populates="subscriptions",
+        lazy="raise",
+    )
     sources: Mapped[list[Source]] = relationship(
         "Source",
         back_populates="subscription",

@@ -10,29 +10,31 @@ from .base import BaseModelConfig
 from .sources import SourceCreateRequest, SourceOut
 
 
-class SubscriptionResponse(BaseModelConfig):
+class SubscriptionBase(BaseModelConfig):
     token: Annotated[str, Field(description="Unique subscription token", min_length=1)]
     name: Annotated[
         str, Field(description="User-defined subscription name", min_length=1, max_length=64)
     ]
+    provider_name: Annotated[str | None, Field(None, description="Provider name")]
     description: Annotated[
         str | None, Field(None, description="Optional description", max_length=64)
     ]
-    sources: Annotated[list[SourceOut], Field(default_factory=list, description="List of sources")]
     sources_count: Annotated[int, Field(description="Total resolved configs count", ge=0)]
     created_at: Annotated[datetime, Field(description="Creation timestamp")]
     updated_at: Annotated[datetime, Field(description="Last update timestamp")]
 
+
+class SubscriptionResponse(SubscriptionBase):
+    sources: Annotated[
+        list[SourceOut],
+        Field(default_factory=list, description="List of sources"),
+    ]
+
     model_config = ConfigDict(from_attributes=True)
 
 
-class SubscriptionListItem(BaseModelConfig):
-    token: Annotated[str, Field(description="Unique subscription token", min_length=1)]
-    name: Annotated[str, Field(min_length=1, max_length=64)]
-    description: Annotated[str | None, Field(None, max_length=64)]
-    sources_count: Annotated[int, Field(ge=0)]
-    created_at: Annotated[datetime, Field()]
-    updated_at: Annotated[datetime, Field()]
+class SubscriptionListItem(SubscriptionBase):
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─────────────────────────────────────────────────────────

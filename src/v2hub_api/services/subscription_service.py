@@ -31,11 +31,12 @@ from v2hub_api.core.exceptions import (
     TooManySourcesError,
     TooManySubscriptionsError,
 )
-from v2hub_api.db.models import Subscription, User
+from v2hub_api.db.models import Subscription
 from v2hub_api.db.models.base import utcnow
 from v2hub_api.db.repositories import (
     ConfigCommentRepository,
     ExternalCacheRepository,
+    ProviderAuthorizationRepository,
     ProxyConfigRepository,
     SourceRepository,
     SubscriptionRepository,
@@ -79,34 +80,9 @@ class SubscriptionService:
         self.comment_repo = ConfigCommentRepository(session)
         self.external_repo = ExternalCacheRepository(session)
         self.user_repo = UserRepository(session)
+        self.provider_authorization_repo = ProviderAuthorizationRepository(session)
         self.cache_service = cache_service
         self._http_client = get_http_client()
-
-    # ═══════════════════════════════════════════════════════════════════════
-    # User Management
-    # ═══════════════════════════════════════════════════════════════════════
-
-    async def authenticate_user(self, api_token: str) -> User:
-        """
-        Authenticate user by API token.
-
-        Args:
-            api_token: User's API token
-
-        Returns:
-            Authenticated user
-
-        Raises:
-            AuthorizationError: If token is invalid
-        """
-        user = await self.user_repo.get_by_api_token(api_token)
-        if not user:
-            raise AuthorizationError("Invalid API token")
-
-        if not user.is_active:
-            raise AuthorizationError("User account is inactive")
-
-        return user
 
     # ═══════════════════════════════════════════════════════════════════════
     # Subscription CRUD
@@ -114,7 +90,9 @@ class SubscriptionService:
 
     async def create_subscription(
         self,
+        *,
         user_hash: str,
+        provider_hash: str | None = None,
         name: str,
         description: str | None = None,
         sources: list[SourceCreateRequest] | None = None,
@@ -124,6 +102,7 @@ class SubscriptionService:
 
         Args:
             user_hash: Owner's user hash
+            provider_hash: Owner's provider hash (scopes uniqueness/limits per provider)
             name: Subscription name (unique per user)
             description: Optional description
             sources: Initial sources to add
@@ -134,14 +113,22 @@ class SubscriptionService:
         Raises:
             DuplicateNameError: If name already exists for user
         """
+        if provider_hash:
+            curr_subs = await self.subscription_repo.list_by_provider(
+                user_hash=user_hash,
+                provider_hash=provider_hash,
+            )
+        else:
+            curr_subs = await self.subscription_repo.list_by_user(user_hash=user_hash)
 
-        user_subs = await self.subscription_repo.list_by_user(user_hash)
         max_subs = settings.max_subscriptions_per_user
-        if len(user_subs) >= max_subs:
-            raise TooManySubscriptionsError(len(user_subs), max_subs)
+        if len(curr_subs) >= max_subs:
+            raise TooManySubscriptionsError(len(curr_subs), max_subs)
 
         # Check name uniqueness
-        existing = await self.subscription_repo.get_by_name(user_hash, name)
+        existing = await self.subscription_repo.get_by_name(
+            user_hash=user_hash, provider_hash=provider_hash, name=name
+        )
         if existing:
             raise DuplicateNameError(name)
 
@@ -153,12 +140,16 @@ class SubscriptionService:
             token=token,
             name=name,
             user_hash=user_hash,
+            provider_hash=provider_hash,
             description=description,
         )
 
         # Add initial sources if provided
         if sources:
-            await self._add_sources_internal(subscription, sources, user_hash)
+            await self._add_sources_internal(
+                subscription=subscription,
+                sources=sources,
+            )
 
         await self.session.commit()
 
@@ -170,51 +161,99 @@ class SubscriptionService:
 
         raise SubscriptionNotFoundError(token)
 
-    async def get_subscription(
+    async def _load_subscription(
         self,
         token: str,
-        user_hash: str,
     ) -> Subscription:
-        """
-        Get subscription by token.
-
-        Args:
-            token: Subscription token
-            user_hash: Requesting user's hash
-
-        Returns:
-            Subscription with sources loaded
-
-        Raises:
-            SubscriptionNotFoundError: If not found
-            AuthorizationError: If user doesn't own it
-        """
-        subscription = await self.subscription_repo.get_by_token(token, load_sources=True)
+        subscription = await self.subscription_repo.get_by_token(
+            token,
+            load_sources=True,
+        )
 
         if not subscription:
             raise SubscriptionNotFoundError(token)
 
+        return subscription
+
+    async def get_subscription(
+        self,
+        *,
+        token: str,
+        user_hash: str,
+    ) -> Subscription:
+        """
+        Get subscription available to the user for reading.
+        """
+        subscription = await self._load_subscription(token)
+
         if subscription.user_hash != user_hash:
+            raise AuthorizationError("You don't have permission to access this subscription")
+
+        if subscription.provider_hash and not await self.provider_authorization_repo.get_approved(
+            provider_hash=subscription.provider_hash, user_hash=user_hash
+        ):
+            raise SubscriptionNotFoundError(token)
+
+        return subscription
+
+    async def get_managed_subscription(
+        self,
+        *,
+        token: str,
+        user_hash: str,
+        provider_hash: str | None,
+    ) -> Subscription:
+        """
+        Get subscription that can be managed by the current actor.
+        """
+        subscription = await self._load_subscription(token)
+
+        if subscription.user_hash != user_hash or subscription.provider_hash != provider_hash:
             raise AuthorizationError("You don't have permission to access this subscription")
 
         return subscription
 
-    async def list_subscriptions(self, user_hash: str) -> list[Subscription]:
+    async def list_subscriptions(
+        self,
+        *,
+        user_hash: str,
+        provider_hash: str | None = None,
+    ) -> list[Subscription]:
         """
-        List all subscriptions for a user.
-
-        Args:
-            user_hash: User's hash
-
-        Returns:
-            List of subscriptions with sources loaded
+        List all subscriptions available to the current user.
         """
-        return await self.subscription_repo.list_by_user(user_hash, load_sources=True)
+        if provider_hash:
+            return await self.subscription_repo.list_by_provider(
+                user_hash=user_hash,
+                provider_hash=provider_hash,
+                load_sources=True,
+            )
+
+        subscriptions = await self.subscription_repo.list_by_user(
+            user_hash,
+            load_sources=True,
+            include_provider_subscriptions=True,
+        )
+
+        if all(subscription.provider_hash is None for subscription in subscriptions):
+            return subscriptions
+
+        approved = await self.provider_authorization_repo.get_approved_provider_hashes(
+            user_hash,
+        )
+
+        return [
+            subscription
+            for subscription in subscriptions
+            if subscription.provider_hash is None or subscription.provider_hash in approved
+        ]
 
     async def update_subscription(
         self,
+        *,
         token: str,
         user_hash: str,
+        provider_hash: str | None = None,
         name: str | None = None,
         description: str | None = None,
     ) -> Subscription:
@@ -224,6 +263,7 @@ class SubscriptionService:
         Args:
             token: Subscription token
             user_hash: Requesting user's hash
+            provider_hash: Requesting user's provider hash
             name: New name (if changing)
             description: New description
 
@@ -233,13 +273,19 @@ class SubscriptionService:
         Raises:
             DuplicateNameError: If new name conflicts
         """
-        subscription = await self.get_subscription(token, user_hash)
+        subscription = await self.get_managed_subscription(
+            token=token,
+            user_hash=user_hash,
+            provider_hash=provider_hash,
+        )
 
         update_data: dict[str, Any] = {}
 
         if name and name != subscription.name:
             # Check name uniqueness
-            existing = await self.subscription_repo.get_by_name(user_hash, name)
+            existing = await self.subscription_repo.get_by_name(
+                user_hash=user_hash, provider_hash=provider_hash, name=name
+            )
             if existing:
                 raise DuplicateNameError(name)
             update_data["name"] = name
@@ -256,7 +302,12 @@ class SubscriptionService:
 
         return subscription
 
-    async def delete_subscription(self, token: str, user_hash: str) -> None:
+    async def delete_subscription(
+        self,
+        token: str,
+        user_hash: str,
+        provider_hash: str | None = None,
+    ) -> None:
         """
         Delete a subscription.
 
@@ -268,8 +319,13 @@ class SubscriptionService:
         Args:
             token: Subscription token
             user_hash: Requesting user's hash
+            provider_hash: Requesting user's provider hash
         """
-        subscription = await self.get_subscription(token, user_hash)
+        subscription = await self.get_managed_subscription(
+            token=token,
+            user_hash=user_hash,
+            provider_hash=provider_hash,
+        )
 
         if not subscription:
             raise SubscriptionNotFoundError(token)
@@ -305,8 +361,10 @@ class SubscriptionService:
 
     async def add_sources(
         self,
+        *,
         token: str,
         user_hash: str,
+        provider_hash: str | None = None,
         sources: list[SourceCreateRequest],
     ) -> Subscription:
         """
@@ -315,13 +373,19 @@ class SubscriptionService:
         Args:
             token: Subscription token
             user_hash: Requesting user's hash
+            provider_hash: Requesting user's provider hash
             sources: Source configurations to add
 
         Returns:
             Updated subscription
         """
-        subscription = await self.get_subscription(token, user_hash)
-        await self._add_sources_internal(subscription, sources, user_hash)
+        subscription = await self.get_managed_subscription(
+            token=token, user_hash=user_hash, provider_hash=provider_hash
+        )
+        await self._add_sources_internal(
+            subscription=subscription,
+            sources=sources,
+        )
 
         await self.session.commit()
 
@@ -334,15 +398,19 @@ class SubscriptionService:
 
     async def replace_sources(
         self,
+        *,
         token: str,
         user_hash: str,
+        provider_hash: str | None = None,
         sources: list[SourceCreateRequest],
     ) -> Subscription:
         """
         Replace all sources in subscription.
         """
 
-        subscription = await self.get_subscription(token, user_hash)
+        subscription = await self.get_managed_subscription(
+            token=token, user_hash=user_hash, provider_hash=provider_hash
+        )
 
         existing_source_ids = {source.id for source in subscription.sources}
         preserved_source_ids = set()
@@ -367,16 +435,16 @@ class SubscriptionService:
         # удаление
         if source_ids_to_remove:
             await self.remove_sources(
-                token,
-                user_hash,
-                list(source_ids_to_remove),
+                token=token,
+                user_hash=user_hash,
+                provider_hash=provider_hash,
+                source_ids=list(source_ids_to_remove),
             )
 
         # добавление
         await self._add_sources_internal(
-            subscription,
-            sources,
-            user_hash,
+            subscription=subscription,
+            sources=sources,
             reset_indexes=True,
         )
 
@@ -394,8 +462,10 @@ class SubscriptionService:
 
     async def remove_sources(
         self,
+        *,
         token: str,
         user_hash: str,
+        provider_hash: str | None = None,
         source_ids: list[str],
     ) -> Subscription:
         """
@@ -408,12 +478,15 @@ class SubscriptionService:
         Args:
             token: Subscription token
             user_hash: Requesting user's hash
+            provider_hash: Requesting user's provider hash
             source_ids: Source IDs to remove
 
         Returns:
             Updated subscription
         """
-        subscription = await self.get_subscription(token, user_hash)
+        subscription = await self.get_managed_subscription(
+            token=token, user_hash=user_hash, provider_hash=provider_hash
+        )
 
         # Get sources to be deleted (for cache cleanup)
         if self.cache_service and source_ids:
@@ -468,8 +541,10 @@ class SubscriptionService:
 
     async def update_config_comment(
         self,
+        *,
         token: str,
         user_hash: str,
+        provider_hash: str | None = None,
         config_hash: str,
         comment: str,
     ) -> None:
@@ -479,11 +554,14 @@ class SubscriptionService:
         Args:
             token: Subscription token
             user_hash: Requesting user's hash
+            provider_hash: Requesting user's provider hash
             config_hash: Config hash to update comment for
             comment: New comment text
         """
         # Verify ownership
-        subscription = await self.get_subscription(token, user_hash)
+        subscription = await self.get_managed_subscription(
+            token=token, user_hash=user_hash, provider_hash=provider_hash
+        )
 
         await self.check_source(subscription, config_hash)
 
@@ -529,8 +607,10 @@ class SubscriptionService:
 
     async def update_config(
         self,
+        *,
         token: str,
         user_hash: str,
+        provider_hash: str | None = None,
         config_hash: str,
         comment: str | None = None,
         is_hidden: bool | None = None,
@@ -546,7 +626,9 @@ class SubscriptionService:
         """
 
         # Verify ownership
-        subscription = await self.get_subscription(token, user_hash)
+        subscription = await self.get_managed_subscription(
+            token=token, user_hash=user_hash, provider_hash=provider_hash
+        )
         await self.check_source(subscription, config_hash)
 
         updated = await self._update_config(
@@ -579,15 +661,21 @@ class SubscriptionService:
 
     async def refresh_subscription(
         self,
+        *,
         token: str,
         user_hash: str,
+        provider_hash: str | None = None,
     ) -> RefreshSubscriptionResponse:
         """
         Manually refresh all external URLs in subscription.
         Fetches fresh content from all EXTERNAL_URL sources and updates cache.
         Does NOT affect CONFIG or INTERNAL_TOKEN sources.
         """
-        subscription = await self.get_subscription(token, user_hash)
+        subscription = await self.get_managed_subscription(
+            token=token,
+            user_hash=user_hash,
+            provider_hash=provider_hash,
+        )
 
         from v2hub_api.services.cache_service import CacheService, get_redis_client
 
@@ -655,6 +743,7 @@ class SubscriptionService:
             await self.remove_sources(
                 token=token,
                 user_hash=user_hash,
+                provider_hash=provider_hash,
                 source_ids=list(incorrect_links),
             )
 
@@ -676,9 +765,9 @@ class SubscriptionService:
 
     async def _add_sources_internal(
         self,
+        *,
         subscription: Subscription,
         sources: list[SourceCreateRequest],
-        user_hash: str,
         reset_indexes: bool = False,
     ) -> None:
         """
@@ -719,26 +808,26 @@ class SubscriptionService:
 
             if source_type == SourceType.CONFIG:
                 await self._add_config_source(
-                    subscription.token,
-                    source,
-                    seen_ids,
-                    order_index,
+                    subscription_token=subscription.token,
+                    source=source,
+                    seen_ids=seen_ids,
+                    order_index=order_index,
                 )
 
             elif source_type == SourceType.EXTERNAL_URL:
                 await self._add_external_source(
-                    subscription.token,
-                    source,
-                    seen_ids,
-                    order_index,
+                    subscription_token=subscription.token,
+                    source=source,
+                    seen_ids=seen_ids,
+                    order_index=order_index,
                 )
 
             elif source_type == SourceType.INTERNAL_TOKEN:
                 await self._add_internal_source(
-                    subscription.token,
-                    source,
-                    seen_ids,
-                    order_index,
+                    subscription_token=subscription.token,
+                    source=source,
+                    seen_ids=seen_ids,
+                    order_index=order_index,
                 )
 
             order_index += 1
@@ -762,6 +851,7 @@ class SubscriptionService:
 
     async def _add_config_source(
         self,
+        *,
         subscription_token: str,
         source: SourceCreateRequest,
         seen_ids: set[str],
@@ -849,6 +939,7 @@ class SubscriptionService:
 
     async def _add_external_source(
         self,
+        *,
         subscription_token: str,
         source: SourceCreateRequest,
         seen_ids: set[str],
@@ -930,6 +1021,7 @@ class SubscriptionService:
 
     async def _add_internal_source(
         self,
+        *,
         subscription_token: str,
         source: SourceCreateRequest,
         seen_ids: set[str],
@@ -997,6 +1089,7 @@ class SubscriptionService:
 
     async def _check_circular_reference(
         self,
+        *,
         target_token: str,
         visited: set[str],
         checked: dict[str, int] | None = None,  # token -> max depth-budget it was verified for

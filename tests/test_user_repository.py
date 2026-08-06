@@ -8,12 +8,12 @@ pytestmark = pytest.mark.asyncio
 
 
 async def _make_user(repo: UserRepository, **overrides):
-    defaults = dict(
-        user_hash="hash-1",
-        user_id=1001,
-        api_token="token-1",
-        is_active=True,
-    )
+    defaults = {
+        "user_hash": "hash-1",
+        "user_id": 1001,
+        "api_token": "token-1",
+        "is_active": True,
+    }
     defaults.update(overrides)
     return await repo.create_user(**defaults)
 

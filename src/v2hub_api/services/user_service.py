@@ -242,6 +242,32 @@ class UserService:
 
         return user
 
+    async def authenticate_user_by_id(
+        self,
+        user_id: int,
+    ) -> User:
+        """
+        Get an active user by user ID.
+
+        Args:
+            user_id: External user identifier.
+
+        Returns:
+            Authenticated user.
+
+        Raises:
+            AuthenticationError: If the user does not exist or is inactive.
+        """
+        user = await self.get_by_user_id(user_id)
+
+        if user is None:
+            raise AuthenticationError("User not found")
+
+        if not user.is_active:
+            raise AuthenticationError("User account is inactive")
+
+        return user
+
     async def deactivate_user(self, user_id: int) -> User:
         """
         Deactivate user account.

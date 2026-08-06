@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from v2hub_api.db.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from . import Subscription
+    from . import Provider, ProviderAuthorization, Subscription
 
 # ═══════════════════════════════════════════════════════════════════════════
 # User Management
@@ -52,6 +52,21 @@ class User(TimestampMixin, Base):
         "Subscription",
         back_populates="user",
         cascade="all, delete-orphan",
+        lazy="raise",
+    )
+
+    provider: Mapped[Provider | None] = relationship(
+        "Provider",
+        back_populates="owner",
+        uselist=False,
+        lazy="raise",
+    )
+
+    provider_authorizations: Mapped[list[ProviderAuthorization]] = relationship(
+        "ProviderAuthorization",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="raise",
     )
 
     def __repr__(self) -> str:

@@ -17,7 +17,6 @@ These complement test_resolver_service.py by covering:
 """
 
 import asyncio
-
 from unittest.mock import AsyncMock
 
 import pytest

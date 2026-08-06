@@ -68,7 +68,10 @@ class TestGetByName:
         repo = SubscriptionRepository(db_session)
         await repo.create_subscription(token="t1", name="unique-name", user_hash="user-hash-1")
 
-        found = await repo.get_by_name("user-hash-1", "unique-name")
+        found = await repo.get_by_name(
+            user_hash="user-hash-1",
+            name="unique-name",
+        )
         assert found is not None
         assert found.token == "t1"
 
@@ -77,7 +80,10 @@ class TestGetByName:
         repo = SubscriptionRepository(db_session)
         await repo.create_subscription(token="t1", name="n1", user_hash="user-hash-1")
 
-        found = await repo.get_by_name("other-user-hash", "n1")
+        found = await repo.get_by_name(
+            user_hash="other-user-hash",
+            name="n1",
+        )
         assert found is None
 
     async def test_returns_none_for_wrong_name(self, db_session):
@@ -85,7 +91,10 @@ class TestGetByName:
         repo = SubscriptionRepository(db_session)
         await repo.create_subscription(token="t1", name="n1", user_hash="user-hash-1")
 
-        found = await repo.get_by_name("user-hash-1", "different-name")
+        found = await repo.get_by_name(
+            user_hash="user-hash-1",
+            name="different-name",
+        )
         assert found is None
 
 

@@ -1,5 +1,10 @@
 from .base import BaseModelConfig
 from .models import CommentUpdateRequest, ResolvedConfig, UpsertUserRequest
+from .providers import (
+    ProviderConnectionDeleteResponse,
+    ProviderConnectionRequest,
+    ProviderConnectionResponse,
+)
 from .sources import (
     SourceCreateRequest,
     SourceOut,
@@ -19,6 +24,9 @@ from .subscriptions import (
 __all__ = [
     "BaseModelConfig",
     "CommentUpdateRequest",
+    "ProviderConnectionDeleteResponse",
+    "ProviderConnectionRequest",
+    "ProviderConnectionResponse",
     "RefreshSubscriptionResponse",
     "ResolvedConfig",
     "SourceCreateRequest",

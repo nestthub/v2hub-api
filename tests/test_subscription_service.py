@@ -10,22 +10,22 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from v2hub_api.core.enums import SourceType
 from v2hub_api.core.exceptions import (
     AuthorizationError,
+    AuthenticationError,
     CircularReferenceError,
     DuplicateNameError,
     InvalidConfigError,
-    InvalidURLError,
-    NestingTooDeepError,
     NotFoundError,
     SubscriptionNotFoundError,
     TooManySourcesError,
     TooManySubscriptionsError,
 )
-from v2hub_api.core.enums import SourceType
 from v2hub_api.db.repositories.user_repository import UserRepository
 from v2hub_api.schemas import SourceCreateRequest
 from v2hub_api.services.subscription_service import SubscriptionService
+from v2hub_api.services.user_service import UserService
 
 pytestmark = pytest.mark.asyncio
 
@@ -114,13 +114,16 @@ class TestGetSubscription:
         service = SubscriptionService(db_session)
         created = await service.create_subscription(user_hash="u1", name="Mine")
 
-        found = await service.get_subscription(created.token, "u1")
+        found = await service.get_subscription(
+            token=created.token,
+            user_hash="u1",
+        )
         assert found.token == created.token
 
     async def test_raises_not_found_for_missing_token(self, db_session):
         service = SubscriptionService(db_session)
         with pytest.raises(SubscriptionNotFoundError):
-            await service.get_subscription("missing-token", "u1")
+            await service.get_subscription(token="missing-token", user_hash="u1")
 
     async def test_raises_authorization_error_for_other_user(self, db_session):
         await _make_user(db_session, user_hash="u1", user_id=1, api_token="t1")
@@ -129,7 +132,7 @@ class TestGetSubscription:
         created = await service.create_subscription(user_hash="u1", name="Mine")
 
         with pytest.raises(AuthorizationError):
-            await service.get_subscription(created.token, "u2")
+            await service.get_subscription(token=created.token, user_hash="u2")
 
 
 class TestListSubscriptions:
@@ -141,7 +144,7 @@ class TestListSubscriptions:
         await service.create_subscription(user_hash="u1", name="A")
         await service.create_subscription(user_hash="u2", name="B")
 
-        subs = await service.list_subscriptions("u1")
+        subs = await service.list_subscriptions(user_hash="u1")
         assert len(subs) == 1
         assert subs[0].name == "A"
 
@@ -153,7 +156,7 @@ class TestUpdateSubscription:
         created = await service.create_subscription(user_hash="u1", name="Old Name")
 
         updated = await service.update_subscription(
-            created.token, "u1", name="New Name", description="New Desc"
+            token=created.token, user_hash="u1", name="New Name", description="New Desc"
         )
 
         assert updated.name == "New Name"
@@ -166,14 +169,16 @@ class TestUpdateSubscription:
         sub2 = await service.create_subscription(user_hash="u1", name="Other")
 
         with pytest.raises(DuplicateNameError):
-            await service.update_subscription(sub2.token, "u1", name="Taken")
+            await service.update_subscription(token=sub2.token, user_hash="u1", name="Taken")
 
     async def test_no_op_update_does_not_raise(self, db_session):
         await _make_user(db_session)
         service = SubscriptionService(db_session)
         created = await service.create_subscription(user_hash="u1", name="Same")
 
-        updated = await service.update_subscription(created.token, "u1", name="Same")
+        updated = await service.update_subscription(
+            token=created.token, user_hash="u1", name="Same"
+        )
         assert updated.name == "Same"
 
 
@@ -186,7 +191,7 @@ class TestDeleteSubscription:
         await service.delete_subscription(created.token, "u1")
 
         with pytest.raises(SubscriptionNotFoundError):
-            await service.get_subscription(created.token, "u1")
+            await service.get_subscription(token=created.token, user_hash="u1")
 
     async def test_raises_authorization_error_for_other_user(self, db_session):
         await _make_user(db_session, user_hash="u1", user_id=1, api_token="t1")
@@ -214,7 +219,9 @@ class TestAddSourcesConfig:
         sub = await service.create_subscription(user_hash="u1", name="Sub")
 
         updated = await service.add_sources(
-            sub.token, "u1", [SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443#MyServer")]
+            token=sub.token,
+            user_hash="u1",
+            sources=[SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443#MyServer")],
         )
 
         assert len(updated.sources) == 1
@@ -227,8 +234,12 @@ class TestAddSourcesConfig:
         sub = await service.create_subscription(user_hash="u1", name="Sub")
 
         config = f"vless://{VALID_UUID}@host:443"
-        await service.add_sources(sub.token, "u1", [SourceCreateRequest(data=config)])
-        updated = await service.add_sources(sub.token, "u1", [SourceCreateRequest(data=config)])
+        await service.add_sources(
+            token=sub.token, user_hash="u1", sources=[SourceCreateRequest(data=config)]
+        )
+        updated = await service.add_sources(
+            token=sub.token, user_hash="u1", sources=[SourceCreateRequest(data=config)]
+        )
 
         assert len(updated.sources) == 1
 
@@ -239,7 +250,9 @@ class TestAddSourcesConfig:
 
         with pytest.raises(InvalidConfigError):
             await service.add_sources(
-                sub.token, "u1", [SourceCreateRequest(data="not-a-valid-source")]
+                token=sub.token,
+                user_hash="u1",
+                sources=[SourceCreateRequest(data="not-a-valid-source")],
             )
 
     async def test_too_many_sources_raises(self, db_session, monkeypatch):
@@ -251,14 +264,16 @@ class TestAddSourcesConfig:
         sub = await service.create_subscription(user_hash="u1", name="Sub")
 
         await service.add_sources(
-            sub.token, "u1", [SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443")]
+            token=sub.token,
+            user_hash="u1",
+            sources=[SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443")],
         )
 
         with pytest.raises(TooManySourcesError):
             await service.add_sources(
-                sub.token,
-                "u1",
-                [SourceCreateRequest(data="trojan://pass@host2:443")],
+                token=sub.token,
+                user_hash="u1",
+                sources=[SourceCreateRequest(data="trojan://pass@host2:443")],
             )
 
 
@@ -269,7 +284,9 @@ class TestAddSourcesExternalUrl:
         sub = await service.create_subscription(user_hash="u1", name="Sub")
 
         updated = await service.add_sources(
-            sub.token, "u1", [SourceCreateRequest(data="https://example.com/sub")]
+            token=sub.token,
+            user_hash="u1",
+            sources=[SourceCreateRequest(data="https://example.com/sub")],
         )
 
         assert len(updated.sources) == 1
@@ -283,7 +300,9 @@ class TestAddSourcesExternalUrl:
 
         with pytest.raises(Exception):
             await service.add_sources(
-                sub.token, "u1", [SourceCreateRequest(data="http://127.0.0.1/sub")]
+                token=sub.token,
+                user_hash="u1",
+                sources=[SourceCreateRequest(data="http://127.0.0.1/sub")],
             )
 
 
@@ -299,7 +318,7 @@ class TestAddSourcesInternalToken:
         internal_url = f"https://{settings.domain}/sub/{target.token}"
 
         updated = await service.add_sources(
-            owner.token, "u1", [SourceCreateRequest(data=internal_url)]
+            token=owner.token, user_hash="u1", sources=[SourceCreateRequest(data=internal_url)]
         )
 
         assert len(updated.sources) == 1
@@ -316,7 +335,9 @@ class TestAddSourcesInternalToken:
         internal_url = f"https://{settings.domain}/sub/{sub.token}"
 
         with pytest.raises(CircularReferenceError):
-            await service.add_sources(sub.token, "u1", [SourceCreateRequest(data=internal_url)])
+            await service.add_sources(
+                token=sub.token, user_hash="u1", sources=[SourceCreateRequest(data=internal_url)]
+            )
 
     async def test_two_hop_cycle_raises_circular_error(self, db_session):
         await _make_user(db_session)
@@ -328,17 +349,17 @@ class TestAddSourcesInternalToken:
 
         # a -> b
         await service.add_sources(
-            sub_a.token,
-            "u1",
-            [SourceCreateRequest(data=f"https://{settings.domain}/sub/{sub_b.token}")],
+            token=sub_a.token,
+            user_hash="u1",
+            sources=[SourceCreateRequest(data=f"https://{settings.domain}/sub/{sub_b.token}")],
         )
 
         # b -> a should be rejected (would create a cycle)
         with pytest.raises(CircularReferenceError):
             await service.add_sources(
-                sub_b.token,
-                "u1",
-                [SourceCreateRequest(data=f"https://{settings.domain}/sub/{sub_a.token}")],
+                token=sub_b.token,
+                user_hash="u1",
+                sources=[SourceCreateRequest(data=f"https://{settings.domain}/sub/{sub_a.token}")],
             )
 
     async def test_nonexistent_target_subscription_raises(self, db_session):
@@ -350,9 +371,9 @@ class TestAddSourcesInternalToken:
 
         with pytest.raises(SubscriptionNotFoundError):
             await service.add_sources(
-                sub.token,
-                "u1",
-                [SourceCreateRequest(data=f"https://{settings.domain}/sub/does-not-exist")],
+                token=sub.token,
+                user_hash="u1",
+                sources=[SourceCreateRequest(data=f"https://{settings.domain}/sub/does-not-exist")],
             )
 
 
@@ -362,11 +383,15 @@ class TestRemoveSources:
         service = SubscriptionService(db_session)
         sub = await service.create_subscription(user_hash="u1", name="Sub")
         updated = await service.add_sources(
-            sub.token, "u1", [SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443")]
+            token=sub.token,
+            user_hash="u1",
+            sources=[SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443")],
         )
         source_id = updated.sources[0].id
 
-        result = await service.remove_sources(sub.token, "u1", [source_id])
+        result = await service.remove_sources(
+            token=sub.token, user_hash="u1", source_ids=[source_id]
+        )
         assert result.sources == []
 
 
@@ -377,12 +402,14 @@ class TestReplaceSources:
         sub = await service.create_subscription(user_hash="u1", name="Sub")
 
         await service.add_sources(
-            sub.token, "u1", [SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443")]
+            token=sub.token,
+            user_hash="u1",
+            sources=[SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443")],
         )
 
         new_config = "trojan://password@host2:443"
         replaced = await service.replace_sources(
-            sub.token, "u1", [SourceCreateRequest(data=new_config)]
+            token=sub.token, user_hash="u1", sources=[SourceCreateRequest(data=new_config)]
         )
 
         assert len(replaced.sources) == 1
@@ -395,7 +422,9 @@ class TestCheckSource:
         service = SubscriptionService(db_session)
         sub = await service.create_subscription(user_hash="u1", name="Sub")
         updated = await service.add_sources(
-            sub.token, "u1", [SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443")]
+            token=sub.token,
+            user_hash="u1",
+            sources=[SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443")],
         )
 
         result = await service.check_source(updated, updated.sources[0].id)
@@ -416,11 +445,15 @@ class TestUpdateConfigComment:
         service = SubscriptionService(db_session)
         sub = await service.create_subscription(user_hash="u1", name="Sub")
         updated = await service.add_sources(
-            sub.token, "u1", [SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443")]
+            token=sub.token,
+            user_hash="u1",
+            sources=[SourceCreateRequest(data=f"vless://{VALID_UUID}@host:443")],
         )
         config_hash = updated.sources[0].id
 
-        await service.update_config_comment(sub.token, "u1", config_hash, "New Comment")
+        await service.update_config_comment(
+            token=sub.token, user_hash="u1", config_hash=config_hash, comment="New Comment"
+        )
 
         comment = await service.comment_repo.get_comment(sub.token, config_hash)
         assert comment is not None
@@ -448,22 +481,20 @@ class TestExtractToken:
 class TestAuthenticateUser:
     async def test_succeeds_for_active_user(self, db_session):
         await _make_user(db_session, api_token="valid-token")
-        service = SubscriptionService(db_session)
+        service = UserService(db_session)
 
         user = await service.authenticate_user("valid-token")
         assert user.user_hash == "u1"
 
     async def test_raises_for_invalid_token(self, db_session):
-        service = SubscriptionService(db_session)
-        with pytest.raises(AuthorizationError):
+        service = UserService(db_session)
+        with pytest.raises(AuthenticationError):
             await service.authenticate_user("bad-token")
 
     async def test_raises_for_inactive_user(self, db_session):
         user_repo = UserRepository(db_session)
-        user = await user_repo.create_user(
-            user_hash="u1", user_id=1, api_token="tok", is_active=False
-        )
-        service = SubscriptionService(db_session)
+        await user_repo.create_user(user_hash="u1", user_id=1, api_token="tok", is_active=False)
+        service = UserService(db_session)
 
-        with pytest.raises(AuthorizationError):
+        with pytest.raises(AuthenticationError):
             await service.authenticate_user("tok")
