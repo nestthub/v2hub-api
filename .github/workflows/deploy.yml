@@ -67,11 +67,22 @@ jobs:
             echo "Pulling prebuilt images if available..."
             docker compose pull || true
 
-            echo "Recreating containers..."
-            docker compose up -d --build
+            echo "Building images..."
+            docker compose build
+
+            echo "Starting database..."
+            docker compose up -d postgres
+
+            echo "Waiting for database..."
+            until docker compose exec -T postgres pg_isready >/dev/null 2>&1; do
+                sleep 2
+            done
 
             echo "Running database migrations..."
-            docker compose exec -T api alembic upgrade head
+            docker compose run --rm --no-deps api alembic upgrade head
+
+            echo "Starting application..."
+            docker compose up -d --force-recreate
 
             echo "Checking api directly (bypassing nginx) before restarting nginx..."
             attempts=30

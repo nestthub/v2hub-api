@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from v2hub_api.core.config import settings
-from v2hub_api.db.models import Base
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Engine Configuration
@@ -102,7 +101,6 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         # Test connection
         await conn.execute(text("SELECT 1"))
-        await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db() -> None:
