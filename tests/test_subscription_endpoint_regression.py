@@ -89,7 +89,7 @@ class TestGetSubscriptionEndpointRegression:
         app = _build_test_app(db_session, user)
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get(f"/api/v1/subscriptions/{subscription.token}")
+        response = client.get(f"/api/v1/subs/{subscription.token}")
 
         assert response.status_code == 200, (
             f"expected 200, got {response.status_code}: {response.text}"
@@ -108,7 +108,7 @@ class TestGetSubscriptionEndpointRegression:
         app = _build_test_app(db_session, user)
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/v1/subscriptions/does-not-exist")
+        response = client.get("/api/v1/subs/does-not-exist")
 
         assert response.status_code == 404, (
             f"expected 404, got {response.status_code}: {response.text}"

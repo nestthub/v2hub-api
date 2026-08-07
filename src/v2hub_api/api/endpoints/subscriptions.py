@@ -438,13 +438,13 @@ def build_subscriptions_router(
 # ═══════════════════════════════════════════════════════════════════════════
 
 user_router = build_subscriptions_router(
-    prefix="/subscriptions",
+    prefix="/subs",
     actor_dep=get_actor,
     tags=["Subscriptions"],
 )
 
 provider_router = build_subscriptions_router(
-    prefix="/providers/{user_id}/subscriptions",
+    prefix="/providers/{user_id}/subs",
     actor_dep=get_provider_actor,
     tags=["Subscriptions (Provider)"],
 )

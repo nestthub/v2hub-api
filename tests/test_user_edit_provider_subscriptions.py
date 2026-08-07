@@ -351,7 +351,7 @@ class TestUserCannotManageProviderSubscriptionOverHttp:
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.patch(
-            f"/api/v1/subscriptions/{managed_sub.token}",
+            f"/api/v1/subs/{managed_sub.token}",
             json={"name": "Hijacked name"},
         )
 
@@ -362,7 +362,7 @@ class TestUserCannotManageProviderSubscriptionOverHttp:
         app = self._build_app(db_session, user)
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.delete(f"/api/v1/subscriptions/{managed_sub.token}")
+        response = client.delete(f"/api/v1/subs/{managed_sub.token}")
 
         assert response.status_code == 403, response.text
 
@@ -372,7 +372,7 @@ class TestUserCannotManageProviderSubscriptionOverHttp:
         client = TestClient(app, raise_server_exceptions=False)
 
         response = client.post(
-            f"/api/v1/subscriptions/{managed_sub.token}/sources",
+            f"/api/v1/subs/{managed_sub.token}/sources",
             json={"sources": [{"data": "trojan://password@host2:443"}]},
         )
 
