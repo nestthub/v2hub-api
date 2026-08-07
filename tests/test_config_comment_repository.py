@@ -2,7 +2,6 @@
 
 import pytest
 
-from v2hub_api.core.enums import SourceType
 from v2hub_api.db.repositories.config_comment_repository import ConfigCommentRepository
 from v2hub_api.db.repositories.proxy_config import ProxyConfigRepository
 from v2hub_api.db.repositories.subscription_repository import SubscriptionRepository

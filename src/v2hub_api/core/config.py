@@ -158,6 +158,13 @@ class Settings(BaseSettings):
         description="Maximum number of redirects for external subscription requests",
     )
 
+    # ═══ PROVIDER ══════════════════════════════════════════════════════════════
+    max_provider_users: int = Field(
+        default=1000,
+        validation_alias="MAX_PROVIDER_USERS",
+        description="Maximum number of approved users per provider",
+    )
+
     # ═══ CORS ══════════════════════════════════════════════════════════════
     cors_origins: list[str] = Field(default_factory=lambda: ["*"], validation_alias="CORS_ORIGINS")
     cors_credentials: bool = Field(default=True, validation_alias="CORS_CREDENTIALS")

@@ -258,7 +258,13 @@ def create_app() -> FastAPI:
 
     app.include_router(admin.router, prefix="/api/v1")
     app.include_router(
-        subscriptions.router,
+        subscriptions.user_router,
+        prefix="/api/v1",
+        dependencies=[Depends(check_internal_rate_limit)],
+    )
+
+    app.include_router(
+        subscriptions.provider_router,
         prefix="/api/v1",
         dependencies=[Depends(check_internal_rate_limit)],
     )
