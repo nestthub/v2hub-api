@@ -74,7 +74,19 @@ jobs:
             docker compose up -d postgres
 
             echo "Waiting for database..."
-            until docker compose exec -T postgres pg_isready >/dev/null 2>&1; do
+
+            for i in $(seq 1 30); do
+                if docker compose exec -T postgres pg_isready >/dev/null 2>&1; then
+                    echo "Database is ready."
+                    break
+                fi
+
+                if [ "$i" -eq 30 ]; then
+                    echo "Database did not become ready."
+                    docker compose logs --tail=200 postgres
+                    exit 1
+                fi
+
                 sleep 2
             done
 
