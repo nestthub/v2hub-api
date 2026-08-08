@@ -53,62 +53,56 @@ jobs:
 
       - name: Deploy application (pull, rebuild, recreate containers)
         run: |
+          set -e
           ssh -i ~/.ssh/deploy_key -p "${{ secrets.PORT }}" \
               -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile=~/.ssh/known_hosts \
               "${{ secrets.USER }}@${{ secrets.HOST }}" bash -s <<'EOF'
             set -euo pipefail
+            set -x
             cd /root/v2hub-api
 
-            echo "Fetching latest changes from origin/main..."
+            echo "=== Fetching latest changes from origin/main ==="
             git fetch origin
             git reset --hard origin/main
 
-            echo "Pulling prebuilt images if available..."
+            echo "=== Pulling prebuilt images if available ==="
             docker compose pull || true
 
-            echo "Building images..."
+            echo "=== Building images ==="
             docker compose build
 
-            echo "Starting database..."
+            echo "=== Starting database ==="
             docker compose up -d postgres
 
-            echo "Waiting for database..."
-
+            echo "=== Waiting for database ==="
+            db_ready=0
             for i in $(seq 1 30); do
                 if docker compose exec -T postgres pg_isready >/dev/null 2>&1; then
                     echo "Database is ready."
+                    db_ready=1
                     break
                 fi
-
-                if [ "$i" -eq 30 ]; then
-                    echo "Database did not become ready."
-                    docker compose logs --tail=200 postgres
-                    exit 1
-                fi
-
                 sleep 2
             done
+            if [ "$db_ready" -ne 1 ]; then
+                echo "Database did not become ready."
+                docker compose logs --tail=200 postgres
+                exit 1
+            fi
 
-            echo "Running database migrations..."
+            echo "=== Running database migrations ==="
             docker compose run --rm --no-deps api alembic upgrade head
 
-            echo "Starting application..."
+            echo "=== Starting application ==="
             docker compose up -d --force-recreate
 
-            echo "Checking api directly (bypassing nginx) before restarting nginx..."
+            echo "=== Checking api directly (bypassing nginx) before restarting nginx ==="
+            api_ready=0
             attempts=30
             delay=2
-            api_ready=0
             for i in $(seq 1 "$attempts"); do
-              status=$(docker compose exec -T api python -c "
-            import urllib.request
-            try:
-                response = urllib.request.urlopen('http://localhost:8000/health', timeout=3)
-                print(response.status)
-            except Exception:
-                print(0)
-            " 2>/dev/null || echo "000")
+              status=$(docker compose exec -T api python -c "import urllib.request as u; print(u.urlopen('http://localhost:8000/health', timeout=3).status)" 2>/dev/null || echo "000")
               echo "Attempt $i/$attempts: api direct health = $status"
               if [ "$status" = "200" ]; then
                 api_ready=1
@@ -123,27 +117,32 @@ jobs:
             fi
             echo "api is directly reachable, proceeding to restart nginx."
 
-            echo "Restarting nginx to refresh upstream DNS resolution..."
+            echo "=== Restarting nginx to refresh upstream DNS resolution ==="
             docker compose restart nginx
 
-            echo "Cleaning up dangling images and build cache..."
+            echo "=== Cleaning up dangling images and build cache ==="
             docker image prune -f
             docker builder prune -f
+
+            echo "=== DEPLOY SCRIPT COMPLETED SUCCESSFULLY ==="
           EOF
+          echo "SSH deploy step exit code: $?"
 
       - name: Wait for application health check
         run: |
+          set -e
           ssh -i ~/.ssh/deploy_key -p "${{ secrets.PORT }}" \
               -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile=~/.ssh/known_hosts \
               "${{ secrets.USER }}@${{ secrets.HOST }}" bash -s <<'EOF'
             set -euo pipefail
+            set -x
             cd /root/v2hub-api
 
-            echo "Current container status:"
+            echo "=== Current container status ==="
             docker compose ps
 
-            echo "Waiting for /health to return HTTP 200..."
+            echo "=== Waiting for /health to return HTTP 200 ==="
             attempts=30
             delay=5
             success=0
@@ -167,8 +166,9 @@ jobs:
               exit 1
             fi
 
-            echo "Health check passed: /health returned HTTP 200."
+            echo "=== HEALTHCHECK SCRIPT COMPLETED SUCCESSFULLY: /health returned HTTP 200 ==="
           EOF
+          echo "SSH healthcheck step exit code: $?"
 
       - name: Clean up local SSH key
         if: always()
