@@ -159,11 +159,12 @@ class ConflictError(VPNSubscriptionError):
 
 
 class DuplicateNameError(ConflictError):
-    """Raised when a subscription name already exists for a user."""
+    """Raised when an entity name already exists."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, entity: str = "subscription") -> None:
         super().__init__(
-            message=f"Subscription name '{name}' already exists", conflicting_field="name"
+            message=f"{entity.capitalize()} name '{name}' already exists",
+            conflicting_field="name",
         )
 
 

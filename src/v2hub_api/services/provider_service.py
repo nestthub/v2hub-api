@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from v2hub_api.core.config import settings
 from v2hub_api.core.exceptions import (
     AuthenticationError,
+    DuplicateNameError,
     NotFoundError,
     ValidationError,
 )
@@ -225,6 +226,54 @@ class ProviderService:
             "Provider URL updated: provider_hash=%s, provider_url=%s",
             provider_hash,
             provider_url,
+        )
+
+        return provider
+
+    async def update_provider_name(
+        self,
+        provider_hash: str,
+        provider_name: str,
+    ) -> Provider:
+        """
+        Update provider name.
+
+        Args:
+            provider_hash: Provider hash
+            provider_name: New provider name
+
+        Returns:
+            Updated provider
+
+        Raises:
+            NotFoundError: Provider not found
+            DuplicateNameError: Provider name already exists
+        """
+        provider = await self.get_by_hash(provider_hash=provider_hash)
+
+        if not provider:
+            raise NotFoundError("Provider not found")
+
+        # Idempotency: avoid unnecessary DB writes
+        if provider.provider_name == provider_name:
+            return provider
+
+        existing_provider = await self.provider_repo.get_by_name(
+            provider_name=provider_name,
+        )
+
+        if existing_provider:
+            raise DuplicateNameError(provider_name, entity="provider")
+
+        provider.provider_name = provider_name
+
+        await self.session.commit()
+        await self.session.refresh(provider)
+
+        logger.info(
+            "Provider name updated: provider_hash=%s, provider_name=%s",
+            provider_hash,
+            provider_name,
         )
 
         return provider

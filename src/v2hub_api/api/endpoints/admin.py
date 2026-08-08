@@ -55,6 +55,7 @@ from v2hub_api.schemas.admin_models import (
     ProviderTokenRefreshResponse,
     ProviderURLUpdateRequest,
 )
+from v2hub_api.schemas.admin_models.providers import ProviderNameUpdateRequest
 from v2hub_api.services.ban_service import get_ban_service
 from v2hub_api.services.whitelist_service import get_whitelist_service
 
@@ -947,6 +948,55 @@ async def update_provider_url(
 
     except Exception as e:
         logger.error(f"Failed to update provider status: {e}")
+        raise to_http_exception(e) from e
+
+
+@router.patch(
+    "/providers/{provider_hash}/name",
+    response_model=ProviderResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update provider name",
+    description="Update provider name",
+)
+async def update_provider_name(
+    provider_hash: str,
+    request: ProviderNameUpdateRequest,
+    provider_service: ProviderServiceDep,
+    _signature: None = AdminSecurityDep,
+    _ip: None = InternalIPDep,
+) -> ProviderResponse:
+    """Update provider name.
+
+    Args:
+        provider_hash: Provider hash.
+        provider_name: New provider name.
+
+    Returns:
+        Updated provider data.
+    """
+    try:
+        provider = await provider_service.update_provider_name(
+            provider_hash=provider_hash,
+            provider_name=request.provider_name,
+        )
+
+        logger.info(
+            "Provider name updated: provider_hash=%s, provider_name=%s",
+            provider.provider_hash,
+            provider.provider_name,
+        )
+
+        return ProviderResponse(
+            provider_hash=provider.provider_hash,
+            owner_hash=provider.owner_hash,
+            provider_name=provider.provider_name,
+            api_token=provider.api_token,
+            provider_url=provider.provider_url,
+            is_active=provider.is_active,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to update provider name: {e}")
         raise to_http_exception(e) from e
 
 
