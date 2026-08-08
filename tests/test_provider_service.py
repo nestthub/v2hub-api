@@ -120,10 +120,9 @@ class TestGetAllProviders:
         providers = await service.get_all_providers()
         assert len(providers) == 2
 
-    async def test_raises_not_found_when_no_providers(self, db_session):
+    async def test_when_no_providers(self, db_session):
         service = ProviderService(db_session)
-        with pytest.raises(NotFoundError):
-            await service.get_all_providers()
+        assert await service.get_all_providers() == []
 
 
 class TestSetActive:

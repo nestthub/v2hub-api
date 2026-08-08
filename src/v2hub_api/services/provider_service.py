@@ -123,9 +123,6 @@ class ProviderService:
         """
         providers = await self.provider_repo.get_all(limit=1000)
 
-        if not providers:
-            raise NotFoundError("Providers not found")
-
         return providers
 
     async def get_provider(
