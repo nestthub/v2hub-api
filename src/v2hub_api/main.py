@@ -113,12 +113,59 @@ HTTP_EXCEPTIONS_TOTAL = Counter(
 PATH_PATTERNS = [
     (re.compile(r"^/sub/[^/]+$"), "/sub/{token}"),
     (re.compile(r"^/site-docs(/.*)?$"), "/site-docs/*"),
+    # ─── Subscriptions: provider-scoped (/providers/{user_id}/subs/...) ───
+    (
+        re.compile(r"^/api/v1/providers/[^/]+/subs/[^/]+/sources$"),
+        "/api/v1/providers/{user_id}/subs/{token}/sources",
+    ),
+    (
+        re.compile(r"^/api/v1/providers/[^/]+/subs/[^/]+/comments$"),
+        "/api/v1/providers/{user_id}/subs/{token}/comments",
+    ),
+    (
+        re.compile(r"^/api/v1/providers/[^/]+/subs/[^/]+/config$"),
+        "/api/v1/providers/{user_id}/subs/{token}/config",
+    ),
+    (
+        re.compile(r"^/api/v1/providers/[^/]+/subs/[^/]+/refresh$"),
+        "/api/v1/providers/{user_id}/subs/{token}/refresh",
+    ),
+    (
+        re.compile(r"^/api/v1/providers/[^/]+/subs/[^/]+$"),
+        "/api/v1/providers/{user_id}/subs/{token}",
+    ),
+    (re.compile(r"^/api/v1/providers/[^/]+/subs$"), "/api/v1/providers/{user_id}/subs"),
+    # ─── Provider connections (/providers/{user_id}) ───
+    (re.compile(r"^/api/v1/providers/[^/]+/revoke$"), "/api/v1/providers/{user_id}/revoke"),
+    (re.compile(r"^/api/v1/providers/[^/]+$"), "/api/v1/providers/{user_id}"),
+    # ─── Self-service subscriptions (/subs/...) ───
     (re.compile(r"^/api/v1/subs/[^/]+/sources$"), "/api/v1/subs/{token}/sources"),
     (re.compile(r"^/api/v1/subs/[^/]+/comments$"), "/api/v1/subs/{token}/comments"),
+    (re.compile(r"^/api/v1/subs/[^/]+/config$"), "/api/v1/subs/{token}/config"),
     (re.compile(r"^/api/v1/subs/[^/]+/refresh$"), "/api/v1/subs/{token}/refresh"),
     (re.compile(r"^/api/v1/subs/[^/]+$"), "/api/v1/subs/{token}"),
+    # ─── Admin: users ───
+    (re.compile(r"^/api/v1/admin/users/refresh-token$"), "/api/v1/admin/users/refresh-token"),
     (re.compile(r"^/api/v1/admin/users/[^/]+/(.+)$"), r"/api/v1/admin/users/{id}/\1"),
     (re.compile(r"^/api/v1/admin/users/[^/]+$"), "/api/v1/admin/users/{id}"),
+    # ─── Admin: providers ───
+    (
+        re.compile(r"^/api/v1/admin/providers/refresh-token$"),
+        "/api/v1/admin/providers/refresh-token",
+    ),
+    (
+        re.compile(r"^/api/v1/admin/providers/[^/]+/status$"),
+        "/api/v1/admin/providers/{hash}/status",
+    ),
+    (re.compile(r"^/api/v1/admin/providers/[^/]+/url$"), "/api/v1/admin/providers/{hash}/url"),
+    (re.compile(r"^/api/v1/admin/providers/[^/]+/name$"), "/api/v1/admin/providers/{hash}/name"),
+    (re.compile(r"^/api/v1/admin/providers/[^/]+$"), "/api/v1/admin/providers/{hash}"),
+    (re.compile(r"^/api/v1/admin/providers$"), "/api/v1/admin/providers"),
+    # ─── Admin: bans / whitelist / stats ───
+    (re.compile(r"^/api/v1/admin/bans/[^/]+$"), "/api/v1/admin/bans/{ip}"),
+    (re.compile(r"^/api/v1/admin/bans$"), "/api/v1/admin/bans"),
+    (re.compile(r"^/api/v1/admin/whitelist$"), "/api/v1/admin/whitelist"),
+    (re.compile(r"^/api/v1/admin/stats$"), "/api/v1/admin/stats"),
 ]
 
 # Мусорные пути от ботов и сканеров — не трекаем
