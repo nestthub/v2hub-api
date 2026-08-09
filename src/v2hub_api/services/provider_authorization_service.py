@@ -41,11 +41,15 @@ class ProviderAuthorizationService:
         Returns:
             Created provider authorization.
         """
-        return await self.authorization_repo.create(
+        authorization = await self.authorization_repo.create(
             provider_hash=provider_hash,
             user_hash=user_hash,
             status=status,
         )
+
+        await self.session.commit()
+
+        return authorization
 
     async def delete_authorization(
         self,

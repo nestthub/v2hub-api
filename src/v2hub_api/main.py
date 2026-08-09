@@ -30,7 +30,7 @@ from prometheus_client.openmetrics.exposition import (
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
-from v2hub_api.api.endpoints import admin, public, subscriptions
+from v2hub_api.api.endpoints import admin, provider, public, subscriptions
 from v2hub_api.core.config import settings
 from v2hub_api.core.exceptions import VPNSubscriptionError
 from v2hub_api.db.session import close_db, init_db
@@ -315,6 +315,13 @@ def create_app() -> FastAPI:
         prefix="/api/v1",
         dependencies=[Depends(check_internal_rate_limit)],
     )
+
+    app.include_router(
+        provider.router,
+        prefix="/api/v1",
+        dependencies=[Depends(check_internal_rate_limit)],
+    )
+
     app.include_router(public.router, dependencies=[Depends(check_public_rate_limit)])
 
     @app.get("/", include_in_schema=False)
