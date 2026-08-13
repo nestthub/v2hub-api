@@ -128,9 +128,17 @@ def _provider_hash(actor: SubscriptionActor) -> str | None:
     return actor.provider.provider_hash if actor.provider else None
 
 
-def _provider_name(actor: SubscriptionActor) -> str | None:
+def _provider_name(
+    actor: SubscriptionActor, subscription: Subscription | None = None
+) -> str | None:
     """provider_name of the acting provider, or None for self-service."""
-    return actor.provider.provider_name if actor.provider else None
+    if actor.provider:
+        return actor.provider.provider_name
+
+    if subscription and subscription.provider_hash and subscription.provider:
+        return subscription.provider.provider_name
+
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -202,12 +210,14 @@ def build_subscriptions_router(
 
             result = []
             for subscription in subscriptions:
+                provider_name = _provider_name(actor, subscription)
+
                 sources_count = await get_total_configs_count(subscription.token, resolver)
                 result.append(
                     SubscriptionListItem(
                         token=subscription.token,
                         name=subscription.name,
-                        provider_name=_provider_name(actor),
+                        provider_name=provider_name,
                         description=subscription.description,
                         sources_count=sources_count,
                         created_at=subscription.created_at,
@@ -235,7 +245,9 @@ def build_subscriptions_router(
                 token=token,
                 user_hash=actor.user_hash,
             )
-            return await _to_response(subscription, resolver, provider_name=_provider_name(actor))
+            return await _to_response(
+                subscription, resolver, provider_name=_provider_name(actor, subscription)
+            )
         except Exception as e:
             raise to_http_exception(e) from e
 

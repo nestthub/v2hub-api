@@ -18,6 +18,7 @@ class UserResponse(AdminBaseModel):
     user_id: int = Field(..., description="User ID")
     api_token: str = Field(..., description="Generated API token")
     is_active: bool = Field(..., description="Account status")
+    provider_hash: str | None = Field(None, description="Provider hash associated with the user")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -26,6 +27,7 @@ class UserResponse(AdminBaseModel):
                 "user_id": 12345,
                 "api_token": "12345:a1b2c3d4e5f6...",
                 "is_active": True,
+                "provider_hash": None,
             }
         }
     )

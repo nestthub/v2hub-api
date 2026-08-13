@@ -67,6 +67,9 @@ class SubscriptionCreateRequest(BaseModelConfig):
     @field_validator("sources", mode="before")
     @classmethod
     def clean_sources(cls, values: list[str | dict[str, Any]]) -> list[dict[str, Any]]:
+        if not values:
+            return []
+
         cleaned = _normalize_sources(values)
 
         if not cleaned:

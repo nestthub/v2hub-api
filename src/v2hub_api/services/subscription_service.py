@@ -164,10 +164,13 @@ class SubscriptionService:
     async def _load_subscription(
         self,
         token: str,
+        load_sources: bool = True,
+        load_provider: bool = False,
     ) -> Subscription:
         subscription = await self.subscription_repo.get_by_token(
             token,
-            load_sources=True,
+            load_sources=load_sources,
+            load_provider=load_provider,
         )
 
         if not subscription:
@@ -184,7 +187,7 @@ class SubscriptionService:
         """
         Get subscription available to the user for reading.
         """
-        subscription = await self._load_subscription(token)
+        subscription = await self._load_subscription(token, load_provider=True)
 
         if subscription.user_hash != user_hash:
             raise AuthorizationError("You don't have permission to access this subscription")
@@ -233,6 +236,7 @@ class SubscriptionService:
             user_hash,
             load_sources=True,
             include_provider_subscriptions=True,
+            load_provider=True,
         )
 
         if all(subscription.provider_hash is None for subscription in subscriptions):

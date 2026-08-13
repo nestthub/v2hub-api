@@ -206,6 +206,7 @@ async def create_user(
             user_id=user.user_id,
             api_token=user.api_token,
             is_active=user.is_active,
+            provider_hash=None,
         )
 
     except Exception as e:
@@ -223,6 +224,7 @@ async def create_user(
 async def get_user(
     user_id: int,
     user_service: UserServiceDep,
+    provider_service: ProviderServiceDep,
     _signature: None = AdminSecurityDep,
     _ip: None = InternalIPDep,
 ) -> UserResponse:
@@ -234,11 +236,14 @@ async def get_user(
     try:
         user = await user_service.get_user(user_id)
 
+        provider = await provider_service.get_by_owner_hash(owner_hash=user.user_hash)
+
         return UserResponse(
             user_hash=user.user_hash,
             user_id=user.user_id,
             api_token=user.api_token,
             is_active=user.is_active,
+            provider_hash=provider.provider_hash if provider else None,
         )
 
     except Exception as e:
@@ -280,6 +285,7 @@ async def update_user_status(
     user_id: int,
     request: UserStatusUpdateRequest,
     user_service: UserServiceDep,
+    provider_service: ProviderServiceDep,
     _signature: None = AdminSecurityDep,
     _ip: None = InternalIPDep,
 ) -> UserResponse:
@@ -299,6 +305,8 @@ async def update_user_status(
             is_active=request.is_active,
         )
 
+        provider = await provider_service.get_by_owner_hash(owner_hash=user.user_hash)
+
         logger.info(
             "User status updated: user_id=%d, is_active=%s",
             user.user_id,
@@ -310,6 +318,7 @@ async def update_user_status(
             user_id=user.user_id,
             api_token=user.api_token,
             is_active=user.is_active,
+            provider_hash=provider.provider_hash if provider else None,
         )
 
     except Exception as e:

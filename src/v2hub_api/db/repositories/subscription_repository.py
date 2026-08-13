@@ -3,7 +3,7 @@ from typing import Any, cast
 
 from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from v2hub_api.db.models import (
     ConfigComment,
@@ -28,6 +28,7 @@ class SubscriptionRepository(BaseRepository[Subscription]):
         token: str,
         provider_hash: str | None = None,
         load_sources: bool = False,
+        load_provider: bool = False,
     ) -> Subscription | None:
         """
         Get subscription by token.
@@ -37,6 +38,7 @@ class SubscriptionRepository(BaseRepository[Subscription]):
             provider_hash: Provider identifier. If specified, only returns
                 subscriptions created by this provider.
             load_sources: Whether to eagerly load sources.
+            load_provider: Whether to eagerly load the provider.
         """
         stmt = select(Subscription).where(
             Subscription.token == token,
@@ -49,9 +51,18 @@ class SubscriptionRepository(BaseRepository[Subscription]):
 
         if load_sources:
             stmt = stmt.options(
-                selectinload(Subscription.sources).selectinload(Source.proxy_config),
-                selectinload(Subscription.config_comments).selectinload(ConfigComment.proxy_config),
+                selectinload(Subscription.sources).selectinload(
+                    Source.proxy_config,
+                ),
+                selectinload(Subscription.config_comments).selectinload(
+                    ConfigComment.proxy_config,
+                ),
             ).execution_options(populate_existing=True)
+
+        if load_provider:
+            stmt = stmt.options(
+                joinedload(Subscription.provider),
+            )
 
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -94,6 +105,7 @@ class SubscriptionRepository(BaseRepository[Subscription]):
         user_hash: str,
         load_sources: bool = False,
         include_provider_subscriptions: bool = False,
+        load_provider: bool = False,
     ) -> list[Subscription]:
         """
         List subscriptions available for a user.
@@ -102,6 +114,7 @@ class SubscriptionRepository(BaseRepository[Subscription]):
             user_hash: User identifier.
             load_sources: Load related sources and comments.
             include_provider_subscriptions: Include subscriptions created by providers.
+            load_provider: Load related providers.
         """
         stmt = (
             select(Subscription)
@@ -116,18 +129,47 @@ class SubscriptionRepository(BaseRepository[Subscription]):
 
         if load_sources:
             stmt = stmt.options(
-                selectinload(Subscription.sources).selectinload(Source.proxy_config),
-                selectinload(Subscription.config_comments).selectinload(ConfigComment.proxy_config),
+                selectinload(Subscription.sources).selectinload(
+                    Source.proxy_config,
+                ),
+                selectinload(Subscription.config_comments).selectinload(
+                    ConfigComment.proxy_config,
+                ),
+            )
+
+        if load_provider:
+            stmt = stmt.options(
+                joinedload(Subscription.provider),
             )
 
         result = await self.session.execute(stmt)
-        return list(result.scalars().all())
+        subscriptions = list(result.scalars().all())
+
+        from sqlalchemy import inspect
+        from sqlalchemy.orm import NO_VALUE
+
+        for subscription in subscriptions:
+            state = inspect(subscription)
+
+            print(
+                f"subscription={subscription.token} "
+                f"provider_hash={subscription.provider_hash} "
+                f"unloaded={state.unloaded} "
+                f"expired={state.expired_attributes}"
+            )
+
+            provider = state.attrs.provider.loaded_value
+
+            print(f"provider_loaded={provider is not NO_VALUE} provider={provider!r}")
+
+        return subscriptions
 
     async def list_by_provider(
         self,
         provider_hash: str,
         user_hash: str | None = None,
         load_sources: bool = False,
+        load_provider: bool = False,
     ) -> list[Subscription]:
         """
         List subscriptions created by a provider.
@@ -136,6 +178,7 @@ class SubscriptionRepository(BaseRepository[Subscription]):
             provider_hash: Provider identifier.
             user_hash: Optional target user identifier.
             load_sources: Load related sources and comments.
+            load_provider: Load related provider.
         """
         stmt = (
             select(Subscription)
@@ -152,8 +195,17 @@ class SubscriptionRepository(BaseRepository[Subscription]):
 
         if load_sources:
             stmt = stmt.options(
-                selectinload(Subscription.sources).selectinload(Source.proxy_config),
-                selectinload(Subscription.config_comments).selectinload(ConfigComment.proxy_config),
+                selectinload(Subscription.sources).selectinload(
+                    Source.proxy_config,
+                ),
+                selectinload(Subscription.config_comments).selectinload(
+                    ConfigComment.proxy_config,
+                ),
+            )
+
+        if load_provider:
+            stmt = stmt.options(
+                joinedload(Subscription.provider),
             )
 
         result = await self.session.execute(stmt)
