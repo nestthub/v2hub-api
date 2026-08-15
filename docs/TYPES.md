@@ -317,6 +317,23 @@ class UpsertUserRequest(BaseModel):
 
 ---
 
+### ProviderConnectionRequest
+
+Internal shape describing the target user for provider connection endpoints. Path parameter only — not sent as a request body on any current endpoint.
+
+```python
+class ProviderConnectionRequest(BaseModel):
+    user_id: Annotated[int, Field(gt=0)]
+```
+
+**Fields**:
+
+| Field     | Type      | Required | Description    | Constraints |
+| --------- | --------- | -------- | -------------- | ----------- |
+| `user_id` | `integer` | Yes      | Target user ID | > 0         |
+
+---
+
 ## Response Models
 
 ### SourceOut
@@ -373,6 +390,7 @@ Subscription in list view (without sources).
 class SubscriptionListItem(BaseModel):
     token: str
     name: str
+    provider_name: str | None
     description: str | None
     sources_count: int
     created_at: datetime
@@ -381,14 +399,15 @@ class SubscriptionListItem(BaseModel):
 
 **Fields**:
 
-| Field           | Type           | Description                      |
-| --------------- | -------------- | -------------------------------- |
-| `token`         | `string`       | Unique subscription token        |
-| `name`          | `string`       | Subscription name                |
-| `description`   | `string\|null` | Optional description             |
-| `sources_count` | `integer`      | Total number of resolved configs |
-| `created_at`    | `datetime`     | Creation timestamp               |
-| `updated_at`    | `datetime`     | Last update timestamp            |
+| Field           | Type           | Description                                               |
+| --------------- | -------------- | --------------------------------------------------------- |
+| `token`         | `string`       | Unique subscription token                                 |
+| `name`          | `string`       | Subscription name                                         |
+| `provider_name` | `string\|null` | Name of the managing provider, or `null` for self-service |
+| `description`   | `string\|null` | Optional description                                      |
+| `sources_count` | `integer`      | Total number of resolved configs                          |
+| `created_at`    | `datetime`     | Creation timestamp                                        |
+| `updated_at`    | `datetime`     | Last update timestamp                                     |
 
 **Example**:
 
@@ -396,6 +415,7 @@ class SubscriptionListItem(BaseModel):
 {
   "token": "abc123xyz456",
   "name": "My VPN",
+  "provider_name": null,
   "description": "Personal collection",
   "sources_count": 25,
   "created_at": "2026-04-27T10:00:00Z",
@@ -413,6 +433,7 @@ Complete subscription details with sources.
 class SubscriptionResponse(BaseModel):
     token: str
     name: str
+    provider_name: str | None
     description: str | None
     sources: list[SourceOut]
     sources_count: int
@@ -433,6 +454,7 @@ All fields from `SubscriptionListItem` plus:
 {
   "token": "abc123xyz456",
   "name": "My VPN",
+  "provider_name": null,
   "description": "Personal collection",
   "sources": [
     {
@@ -522,6 +544,59 @@ class ResolvedConfig(BaseModel):
 
 ---
 
+### ProviderConnectionResponse
+
+Returned by `GET`/`POST /api/v1/providers/{user_id}` and `POST /api/v1/providers/{user_id}/revoke`.
+
+```python
+class ProviderConnectionResponse(BaseModel):
+    user_id: int
+    status: ProviderAuthorizationStatus  # "approved" | "revoked"
+```
+
+**Fields**:
+
+| Field     | Type      | Description             |
+| --------- | --------- | ----------------------- |
+| `user_id` | `integer` | User ID                 |
+| `status`  | `enum`    | `approved` or `revoked` |
+
+**Example**:
+
+```json
+{
+  "user_id": 12345,
+  "status": "approved"
+}
+```
+
+---
+
+### ProviderConnectionDeleteResponse
+
+Returned by `DELETE /api/v1/providers/{user_id}`.
+
+```python
+class ProviderConnectionDeleteResponse(BaseModel):
+    detail: str
+```
+
+**Fields**:
+
+| Field    | Type     | Description              |
+| -------- | -------- | ------------------------ |
+| `detail` | `string` | Operation result message |
+
+**Example**:
+
+```json
+{
+  "detail": "Provider connection deleted"
+}
+```
+
+---
+
 ## Admin Models
 
 ### UserCreateRequest
@@ -576,7 +651,7 @@ class UserResponse(AdminBaseModel):
 {
   "user_hash": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
   "user_id": 12345,
-  "api_token": "12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+  "api_token": "0i9u8y7t6r5e4w3q2p1",
   "is_active": true
 }
 ```
@@ -663,7 +738,7 @@ class TokenRefreshResponse(AdminBaseModel):
 ```json
 {
   "user_id": 12345,
-  "new_api_token": "12345:z9y8x7w6v5u4t3s2r1q0p9o8n7m6l5k4"
+  "new_api_token": "0i9u8y7t6r5e4w3q2p1"
 }
 ```
 
@@ -972,6 +1047,220 @@ class WhitelistAddResponse(AdminBaseModel):
 
 ---
 
+### ProviderCreateRequest
+
+Request to create a new provider account.
+
+```python
+class ProviderCreateRequest(AdminBaseModel):
+    owner_hash: str
+    provider_name: str
+    provider_url: str | None = None
+```
+
+**Fields**:
+
+| Field           | Type           | Required | Description                           |
+| --------------- | -------------- | -------- | ------------------------------------- |
+| `owner_hash`    | `string`       | Yes      | Hash identifying the provider's owner |
+| `provider_name` | `string`       | Yes      | Provider display name                 |
+| `provider_url`  | `string\|null` | No       | Provider URL (e.g. bot link)          |
+
+**Example**:
+
+```json
+{
+  "owner_hash": "a1b2c3d4e5f6...",
+  "provider_name": "vpn123",
+  "provider_url": "https://t.me/examplebot"
+}
+```
+
+---
+
+### ProviderResponse
+
+Provider account details, including the API token.
+
+```python
+class ProviderResponse(AdminBaseModel):
+    provider_hash: str
+    owner_hash: str
+    provider_name: str
+    api_token: str
+    provider_url: str | None
+    is_active: bool
+```
+
+**Fields**:
+
+| Field           | Type           | Description                |
+| --------------- | -------------- | -------------------------- |
+| `provider_hash` | `string`       | Generated provider hash    |
+| `owner_hash`    | `string`       | Hash identifying the owner |
+| `provider_name` | `string`       | Provider display name      |
+| `api_token`     | `string`       | Provider's API token       |
+| `provider_url`  | `string\|null` | Provider URL               |
+| `is_active`     | `boolean`      | Account active status      |
+
+**Example**:
+
+```json
+{
+  "provider_hash": "a1b2c3d4e5f6...",
+  "owner_hash": "q1w2e3r4t5y6...",
+  "provider_name": "vpn123",
+  "api_token": "a1b2c3d4e5f6...",
+  "provider_url": "https://t.me/examplebot",
+  "is_active": true
+}
+```
+
+---
+
+### ProviderCreateResponse
+
+Same shape as `ProviderResponse`, returned by `POST /api/v1/admin/providers`.
+
+```python
+class ProviderCreateResponse(ProviderResponse):
+    pass
+```
+
+---
+
+### AllProvidersResponse
+
+Mapping of all provider names to their hashes.
+
+```python
+class AllProvidersResponse(AdminBaseModel):
+    provider_hashes: dict[str, str]
+```
+
+**Fields**:
+
+| Field             | Type                  | Description                              |
+| ----------------- | --------------------- | ---------------------------------------- |
+| `provider_hashes` | `dict[string,string]` | Mapping of provider name → provider hash |
+
+**Example**:
+
+```json
+{
+  "provider_hashes": {
+    "Provider A": "a1b2c3d4e5f6...",
+    "Provider B": "q9w8e7r6t5y4..."
+  }
+}
+```
+
+---
+
+### ProviderStatusUpdateRequest
+
+Request to enable or disable a provider account.
+
+```python
+class ProviderStatusUpdateRequest(AdminBaseModel):
+    is_active: bool
+```
+
+**Fields**:
+
+| Field       | Type      | Required | Description        |
+| ----------- | --------- | -------- | ------------------ |
+| `is_active` | `boolean` | Yes      | New account status |
+
+---
+
+### ProviderURLUpdateRequest
+
+Request to update a provider's URL.
+
+```python
+class ProviderURLUpdateRequest(AdminBaseModel):
+    provider_url: str | None
+```
+
+**Fields**:
+
+| Field          | Type           | Required | Description      |
+| -------------- | -------------- | -------- | ---------------- |
+| `provider_url` | `string\|null` | Yes      | New provider URL |
+
+---
+
+### ProviderNameUpdateRequest
+
+Request to update a provider's display name.
+
+```python
+class ProviderNameUpdateRequest(AdminBaseModel):
+    provider_name: str
+```
+
+**Fields**:
+
+| Field           | Type     | Required | Description       |
+| --------------- | -------- | -------- | ----------------- |
+| `provider_name` | `string` | Yes      | New provider name |
+
+---
+
+### ProviderTokenRefreshRequest
+
+Request to refresh a provider's API token.
+
+```python
+class ProviderTokenRefreshRequest(AdminBaseModel):
+    provider_hash: str
+```
+
+**Fields**:
+
+| Field           | Type     | Required | Description   |
+| --------------- | -------- | -------- | ------------- |
+| `provider_hash` | `string` | Yes      | Provider hash |
+
+**Example**:
+
+```json
+{
+  "provider_hash": "a1b2c3d4e5f6..."
+}
+```
+
+---
+
+### ProviderTokenRefreshResponse
+
+New token issued for a provider.
+
+```python
+class ProviderTokenRefreshResponse(AdminBaseModel):
+    provider_hash: str
+    new_api_token: str
+```
+
+**Fields**:
+
+| Field           | Type     | Description           |
+| --------------- | -------- | --------------------- |
+| `provider_hash` | `string` | Provider hash         |
+| `new_api_token` | `string` | Newly generated token |
+
+**Example**:
+
+```json
+{
+  "provider_hash": "a1b2c3d4e5f6...",
+  "new_api_token": "0i9u8y7t6r5e4w3q2p1"
+}
+```
+
+---
+
 ## Enumerations
 
 ### SourceType
@@ -1033,6 +1322,25 @@ class ProxyProtocol(str, Enum):
 | Hysteria    | `hysteria://`  | 36712        |
 | Hysteria 2  | `hysteria2://` | 443          |
 | TUIC        | `tuic://`      | 443          |
+
+---
+
+### ProviderAuthorizationStatus
+
+Status of a provider ↔ user authorization relationship.
+
+```python
+class ProviderAuthorizationStatus(StrEnum):
+    APPROVED = "approved"
+    REVOKED = "revoked"
+```
+
+**Values**:
+
+| Value      | Description                                                             |
+| ---------- | ----------------------------------------------------------------------- |
+| `APPROVED` | Provider is authorized to manage this user's subscriptions              |
+| `REVOKED`  | Authorization has been revoked; provider can no longer act for the user |
 
 ---
 
@@ -1208,4 +1516,5 @@ IPAddress = Annotated[str, Field(min_length=7, max_length=45)]
 }
 ```
 
-**Last Updated**: July 16, 2026
+**API Version**: 1.1.0
+**Last Updated**: August 15, 2026

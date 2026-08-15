@@ -26,3 +26,10 @@ class ProviderConnectionDeleteResponse(BaseModelConfig):
     detail: str = Field(
         description="Operation result",
     )
+
+
+class ProviderInfoResponse(BaseModelConfig):
+    provider_name: str = Field(
+        description="Provider name",
+    )
+    provider_url: str = Field(description="Provider url")

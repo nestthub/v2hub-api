@@ -20,6 +20,7 @@ This package is one component of V2Hub — see the full project overview, archit
 - **Recursive Resolution**: Automatically resolve nested subscription references with circular detection
 - **Two-Tier Caching**: Redis + PostgreSQL for optimal performance and reliability
 - **Background Refresh**: Celery workers automatically update external sources every 15 minutes
+- **Provider Integrations**: External services (bots, resellers) can request per-user authorization and manage subscriptions on a user's behalf, subject to a configurable approved-user cap per provider
 
 ### Security & Protection
 
@@ -117,12 +118,12 @@ uvicorn v2hub_api.main:app --reload --host 0.0.0.0 --port 8000
 │  (Uvicorn)  │
 └──────┬──────┘
        │
-       ├─────────────────┬─────────────────┐
-       │                 │                 │
-┌──────▼──────┐   ┌──────▼──────┐   ┌─────▼─────┐
-│ PostgreSQL  │   │    Redis    │   │  Celery   │
-│   (Data)    │   │   (Cache)   │   │  Workers  │
-└─────────────┘   └─────────────┘   └───────────┘
+       ├─────────────────┐
+       │                 │
+┌──────▼──────┐   ┌──────▼──────┐
+│ PostgreSQL  │   │    Redis    │
+│   (Data)    │   │   (Cache)   │
+└─────────────┘   └─────────────┘
 
 ┌─────────────────────────────────────────────────┐
 │              Monitoring Stack                   │
@@ -138,7 +139,6 @@ uvicorn v2hub_api.main:app --reload --host 0.0.0.0 --port 8000
 | **API Framework** | FastAPI 0.136+ | High-performance async web framework |
 | **Database**      | PostgreSQL 16  | Primary data storage                 |
 | **Cache**         | Redis 7        | Fast caching and rate limiting       |
-| **Task Queue**    | Celery 5.6     | Background jobs and scheduling       |
 | **ORM**           | SQLAlchemy 2.0 | Async database access                |
 | **Validation**    | Pydantic 2.13  | Request/response validation          |
 | **HTTP Client**   | aiohttp 3.13   | Async external URL fetching          |
@@ -364,7 +364,7 @@ Create a `.env` file in the project root:
 # Core
 # ─────────────────────────────
 APP_NAME=v2hub
-APP_VERSION=1.0.4
+APP_VERSION=1.1.0
 ENVIRONMENT=production
 DEBUG=false
 
@@ -490,6 +490,23 @@ python serve_docs.py
 - `PATCH /api/v1/subs/{token}/comments` - Update config comment _(deprecated, use `/config` above)_
 - `POST /api/v1/subs/{token}/refresh` - Refresh external sources
 
+#### Provider Endpoints (require a provider `API-Token`)
+
+- `GET /api/v1/providers/{user_id}` - Get connection status
+- `POST /api/v1/providers/{user_id}` - Create/re-approve connection for a user
+- `POST /api/v1/providers/{user_id}/revoke` - Revoke connection
+- `DELETE /api/v1/providers/{user_id}` - Delete connection permanently
+- `POST /api/v1/providers/{user_id}/subs` - Create subscription for user
+- `GET /api/v1/providers/{user_id}/subs` - List user's subscriptions
+- `GET /api/v1/providers/{user_id}/subs/{token}` - Get subscription details
+- `PATCH /api/v1/providers/{user_id}/subs/{token}` - Update subscription
+- `DELETE /api/v1/providers/{user_id}/subs/{token}` - Delete subscription
+- `POST /api/v1/providers/{user_id}/subs/{token}/sources` - Add sources
+- `PUT /api/v1/providers/{user_id}/subs/{token}/sources` - Replace sources
+- `DELETE /api/v1/providers/{user_id}/subs/{token}/sources` - Remove sources
+- `PATCH /api/v1/providers/{user_id}/subs/{token}/config` - Update config
+- `POST /api/v1/providers/{user_id}/subs/{token}/refresh` - Refresh external sources
+
 #### Admin Endpoints (require signature + IP whitelist)
 
 - `POST /api/v1/admin/users` - Create user
@@ -503,6 +520,14 @@ python serve_docs.py
 - `POST /api/v1/admin/whitelist` - Add to whitelist
 - `DELETE /api/v1/admin/whitelist` - Remove from whitelist
 - `GET /api/v1/admin/whitelist` - List whitelisted IPs
+- `GET /api/v1/admin/providers` - List providers
+- `POST /api/v1/admin/providers` - Create provider
+- `GET /api/v1/admin/providers/{provider_hash}` - Get provider
+- `DELETE /api/v1/admin/providers/{provider_hash}` - Delete provider
+- `PATCH /api/v1/admin/providers/{provider_hash}/status` - Enable/disable provider
+- `PATCH /api/v1/admin/providers/{provider_hash}/url` - Update provider URL
+- `PATCH /api/v1/admin/providers/{provider_hash}/name` - Update provider name
+- `POST /api/v1/admin/providers/refresh-token` - Refresh provider token
 
 ### Interactive Documentation
 
@@ -539,7 +564,7 @@ curl -X POST http://localhost/api/v1/admin/users \
 {
   "user_hash": "a1b2c3...",
   "user_id": 12345,
-  "api_token": "12345:a1b2c3d4e5f6...",
+  "api_token": "a1b2c3d4e5f6...",
   "is_active": true
 }
 ```
@@ -548,7 +573,7 @@ curl -X POST http://localhost/api/v1/admin/users \
 
 ```bash
 curl -X POST http://localhost/api/v1/subs \
-  -H "API-Token: 12345:a1b2c3d4e5f6..." \
+  -H "API-Token: a1b2c3d4e5f6..." \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My Servers",
@@ -582,6 +607,49 @@ curl http://localhost/sub/abc123xyz
 ```
 
 The response is base64-encoded configs ready to import into VPN clients.
+
+### Managing Subscriptions as a Provider
+
+External services can request per-user authorization and then manage subscriptions on that user's behalf.
+
+#### 1. Request a Connection
+
+```bash
+curl -X POST http://localhost/api/v1/providers/12345 \
+  -H "API-Token: a1B2c3D4e5F6g7H8i9J0"
+```
+
+**Response**:
+
+```json
+{
+  "user_id": 12345,
+  "status": "approved"
+}
+```
+
+#### 2. Create a Subscription for that User
+
+```bash
+curl -X POST http://localhost/api/v1/providers/12345/subs \
+  -H "API-Token: a1B2c3D4e5F6g7H8i9J0" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Managed VPN",
+    "sources": ["vless://uuid@server:port#Server1"]
+  }'
+```
+
+The response includes `"provider_name"` set to the provider's name, distinguishing it from self-service subscriptions (where it's `null`).
+
+#### 3. Revoke Access When Needed
+
+```bash
+curl -X POST http://localhost/api/v1/providers/12345/revoke \
+  -H "API-Token: a1B2c3D4e5F6g7H8i9J0"
+```
+
+See [docs/API_DOCUMENTATION.md](./docs/API_DOCUMENTATION.md#provider-api) for the full Provider API reference.
 
 ### Python Client Example
 

@@ -8,6 +8,7 @@
 - [API Endpoints](#api-endpoints)
   - [Public Endpoints](#public-endpoints)
   - [Subscription Management](#subscription-management)
+  - [Provider API](#provider-api)
   - [Admin Endpoints](#admin-endpoints)
 - [Data Models](#data-models)
 - [Error Handling](#error-handling)
@@ -27,10 +28,11 @@ The VPN Subscription API provides a comprehensive solution for managing and aggr
 - **Circular reference detection**: Prevents infinite loops in subscription chains
 - **Rate limiting**: Configurable limits for different endpoint types
 - **Security**: HMAC-SHA256 signature verification for admin endpoints
+- **Provider integrations**: External services can request user consent to manage subscriptions on a user's behalf, subject to per-provider approved-user limits
 
 **Base URL**: `https://your-domain.com`
 
-**API Version**: v1
+**API Version**: v1 (`1.1.0`)
 
 ---
 
@@ -41,14 +43,30 @@ The VPN Subscription API provides a comprehensive solution for managing and aggr
 Most endpoints require authentication via the `API-Token` header:
 
 ```http
-API-Token: {user_id}:{token_value}
+API-Token: {provider_api_token}
 ```
 
 **Example**:
 
 ```http
-API-Token: 12345:a1b2c3d4e5f6g7h8i9j0
+API-Token: a1b2c3d4e5f6g7h8i9j0
 ```
+
+### Provider Authentication
+
+Provider-scoped endpoints (`/api/v1/providers/...`) also authenticate via the `API-Token` header, but the token identifies a **provider** account rather than a user account. Unlike the user token, it is a single opaque string — it is not prefixed with the provider's hash or any other identifier:
+
+```http
+API-Token: {provider_api_token}
+```
+
+**Example**:
+
+```http
+API-Token: a1B2c3D4e5F6g7H8i9J0
+```
+
+The provider (and its `provider_hash`) is looked up from this token alone. A provider must additionally hold an **approved authorization** for the target `user_id` before it can manage that user's subscriptions (`/api/v1/providers/{user_id}/subs/...`). Authorization is established via `POST /api/v1/providers/{user_id}` and can be revoked at any time — see [Provider API](#provider-api).
 
 ### Admin Authentication
 
@@ -657,6 +675,165 @@ Manually refresh all external URL sources in a subscription.
 
 ---
 
+### Provider API
+
+Providers are external services (e.g. bots, resellers) that manage VPN subscriptions on behalf of a user. Using the Provider API involves two layers:
+
+1. **Connection management** — a provider requests and manages authorization to act for a given `user_id`. Endpoints live under `/api/v1/providers/{user_id}`.
+2. **Delegated subscription management** — once authorized, a provider performs the same subscription CRUD operations as a self-service user, scoped to that `user_id`. Endpoints live under `/api/v1/providers/{user_id}/subs`, mirror [Subscription Management](#subscription-management) endpoint-for-endpoint, and accept the same request/response schemas.
+
+All Provider API endpoints require authentication via the `API-Token` header using a **provider** token (see [Provider Authentication](#provider-authentication)).
+
+**Base Path**: `/api/v1/providers`
+
+#### Get Connection Status
+
+Get the current authorization status between the authenticated provider and a user.
+
+**Endpoint**: `GET /api/v1/providers/{user_id}`
+
+**Parameters**:
+
+- `user_id` (path, required): Target user ID
+
+**Response** (200 OK):
+
+```json
+{
+  "user_id": 12345,
+  "status": "approved"
+}
+```
+
+**Response Schema**:
+
+| Field     | Type    | Description             |
+| --------- | ------- | ----------------------- |
+| `user_id` | integer | User ID                 |
+| `status`  | string  | `approved` or `revoked` |
+
+**Error Responses**:
+
+- `401 Unauthorized`: Invalid or missing provider token
+- `404 Not Found`: User does not exist
+- `403 Forbidden`: No authorization record exists yet for this user
+
+---
+
+#### Create Provider Connection
+
+Create (or re-approve) an authorization allowing the provider to manage the given user's subscriptions. If the target `user_id` doesn't exist yet, a new user account is created automatically.
+
+**Endpoint**: `POST /api/v1/providers/{user_id}`
+
+**Parameters**:
+
+- `user_id` (path, required): Target user ID
+
+**Response** (201 Created):
+
+```json
+{
+  "user_id": 12345,
+  "status": "approved"
+}
+```
+
+**Notes**:
+
+- If the user doesn't exist, it is created as part of this call (temporary behavior — see caveat below)
+- If no authorization exists yet, one is created and immediately approved
+- If a `revoked` authorization already exists, it is re-approved
+- Each provider has a maximum number of approved users (`MAX_PROVIDER_USERS`, default 1000); exceeding it returns `422`
+
+> **Caveat**: User confirmation is currently not required before a connection is approved, and any provider can create a user account by calling this endpoint with an unused `user_id`. This is a temporary implementation — a proper user-facing consent flow (and restricting account creation to trusted callers) is planned for a future release.
+
+**Error Responses**:
+
+- `401 Unauthorized`: Invalid or missing provider token
+- `422 Unprocessable Content`: Provider's approved-user limit reached
+
+---
+
+#### Revoke Provider Connection
+
+Revoke the provider's authorization for a user without deleting the authorization record. The connection can later be re-approved via `POST /api/v1/providers/{user_id}`.
+
+**Endpoint**: `POST /api/v1/providers/{user_id}/revoke`
+
+**Parameters**:
+
+- `user_id` (path, required): Target user ID
+
+**Response** (200 OK):
+
+```json
+{
+  "user_id": 12345,
+  "status": "revoked"
+}
+```
+
+**Error Responses**:
+
+- `401 Unauthorized`: Invalid or missing provider token
+- `404 Not Found`: User does not exist
+- `400 Bad Request`: No authorization record exists for this user
+
+---
+
+#### Delete Provider Connection
+
+Permanently remove the authorization between the provider and the user. Unlike revoke, this deletes the authorization record entirely, along with any subscriptions the provider created for that user.
+
+**Endpoint**: `DELETE /api/v1/providers/{user_id}`
+
+**Parameters**:
+
+- `user_id` (path, required): Target user ID
+
+**Response** (200 OK):
+
+```json
+{
+  "detail": "Provider connection deleted"
+}
+```
+
+**Error Responses**:
+
+- `401 Unauthorized`: Invalid or missing provider token
+- `404 Not Found`: User or authorization not found
+
+---
+
+#### Delegated Subscription Management
+
+Once a provider holds an `approved` authorization for a user, it can perform the full subscription CRUD workflow on that user's behalf using the same request/response shapes documented under [Subscription Management](#subscription-management), with `/api/v1/subs` replaced by `/api/v1/providers/{user_id}/subs`:
+
+| Operation            | Self-service                          | Provider                                                  |
+| -------------------- | ------------------------------------- | --------------------------------------------------------- |
+| Create subscription  | `POST /api/v1/subs`                   | `POST /api/v1/providers/{user_id}/subs`                   |
+| List subscriptions   | `GET /api/v1/subs`                    | `GET /api/v1/providers/{user_id}/subs`                    |
+| Get subscription     | `GET /api/v1/subs/{token}`            | `GET /api/v1/providers/{user_id}/subs/{token}`            |
+| Update subscription  | `PATCH /api/v1/subs/{token}`          | `PATCH /api/v1/providers/{user_id}/subs/{token}`          |
+| Delete subscription  | `DELETE /api/v1/subs/{token}`         | `DELETE /api/v1/providers/{user_id}/subs/{token}`         |
+| Add sources          | `POST /api/v1/subs/{token}/sources`   | `POST /api/v1/providers/{user_id}/subs/{token}/sources`   |
+| Replace sources      | `PUT /api/v1/subs/{token}/sources`    | `PUT /api/v1/providers/{user_id}/subs/{token}/sources`    |
+| Remove sources       | `DELETE /api/v1/subs/{token}/sources` | `DELETE /api/v1/providers/{user_id}/subs/{token}/sources` |
+| Update config        | `PATCH /api/v1/subs/{token}/config`   | `PATCH /api/v1/providers/{user_id}/subs/{token}/config`   |
+| Refresh subscription | `POST /api/v1/subs/{token}/refresh`   | `POST /api/v1/providers/{user_id}/subs/{token}/refresh`   |
+
+**Response differences**: subscriptions created or listed through the Provider API include a populated `provider_name` field (see [Subscription Object](#subscription-object)), identifying which provider manages that subscription. Self-service subscriptions have `provider_name: null`.
+
+**Error Responses** (in addition to the standard subscription errors):
+
+- `401 Unauthorized`: Invalid or missing provider token
+- `403 Forbidden`: Provider does not have an `approved` authorization for this `user_id`
+- `404 Not Found`: User does not exist
+
+---
+
 ### Admin Endpoints
 
 All admin endpoints require both IP whitelisting and HMAC signature verification.
@@ -694,7 +871,7 @@ Create a new user account with generated credentials.
 {
   "user_hash": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
   "user_id": 12345,
-  "api_token": "12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+  "api_token": "q1w2e3r4t5y6u7i8o9p0",
   "is_active": true
 }
 ```
@@ -732,7 +909,7 @@ Retrieve user account information.
 {
   "user_hash": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
   "user_id": 12345,
-  "api_token": "12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+  "api_token": "q1w2e3r4t5y6u7i8o9p0",
   "is_active": true
 }
 ```
@@ -800,7 +977,7 @@ Enable or disable a user account.
 {
   "user_hash": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
   "user_id": 12345,
-  "api_token": "12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+  "api_token": "q1w2e3r4t5y6u7i8o9p0",
   "is_active": false
 }
 ```
@@ -835,7 +1012,7 @@ Generate a new API token for a user.
 ```json
 {
   "user_id": 12345,
-  "new_api_token": "12345:z9y8x7w6v5u4t3s2r1q0p9o8n7m6l5k4"
+  "new_api_token": "q1w2e3r4t5y6u7i8o9p0"
 }
 ```
 
@@ -843,6 +1020,213 @@ Generate a new API token for a user.
 
 - Old token is immediately invalidated
 - User must update their credentials
+
+---
+
+#### List Providers
+
+Get all provider accounts, mapped by name.
+
+**Endpoint**: `GET /api/v1/admin/providers`
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_hashes": {
+    "Provider A": "a1b2c3d4e5f6...",
+    "Provider B": "q9w8e7r6t5y4..."
+  }
+}
+```
+
+**Error Responses**:
+
+- `401 Unauthorized`: Invalid signature or timestamp
+- `403 Forbidden`: IP not in whitelist
+
+---
+
+#### Create Provider
+
+Create a new provider account with a generated API token.
+
+**Endpoint**: `POST /api/v1/admin/providers`
+
+**Request Body**:
+
+```json
+{
+  "owner_hash": "a1b2c3d4e5f6...",
+  "provider_name": "vpn123",
+  "provider_url": "https://t.me/examplebot"
+}
+```
+
+**Request Schema**:
+
+| Field           | Type   | Required | Description                  | Constraints |
+| --------------- | ------ | -------- | ---------------------------- | ----------- |
+| `owner_hash`    | string | Yes      | Hash of the provider's owner | -           |
+| `provider_name` | string | Yes      | Provider display name        | -           |
+| `provider_url`  | string | No       | Provider URL (e.g. bot link) | -           |
+
+**Response** (201 Created):
+
+```json
+{
+  "provider_hash": "a1b2c3d4e5f6...",
+  "owner_hash": "q1w2e3r4t5y6...",
+  "provider_name": "vpn123",
+  "api_token": "a1b2c3d4e5f6...",
+  "provider_url": "https://t.me/examplebot",
+  "is_active": true
+}
+```
+
+**Error Responses**:
+
+- `401 Unauthorized`: Invalid signature or timestamp
+- `403 Forbidden`: IP not in whitelist
+
+---
+
+#### Get Provider
+
+Retrieve provider account information.
+
+**Endpoint**: `GET /api/v1/admin/providers/{provider_hash}`
+
+**Parameters**:
+
+- `provider_hash` (path, required): Provider hash
+
+**Response** (200 OK): Same shape as [Create Provider](#create-provider)
+
+**Error Responses**:
+
+- `404 Not Found`: Provider not found
+- `401 Unauthorized`: Invalid signature
+- `403 Forbidden`: IP not in whitelist
+
+---
+
+#### Delete Provider
+
+Delete a provider account.
+
+**Endpoint**: `DELETE /api/v1/admin/providers/{provider_hash}`
+
+**Parameters**:
+
+- `provider_hash` (path, required): Provider hash
+
+**Response** (204 No Content): Empty body
+
+**Error Responses**:
+
+- `404 Not Found`: Provider not found
+- `401 Unauthorized`: Invalid signature
+- `403 Forbidden`: IP not in whitelist
+
+---
+
+#### Update Provider Status
+
+Enable or disable a provider account.
+
+**Endpoint**: `PATCH /api/v1/admin/providers/{provider_hash}/status`
+
+**Parameters**:
+
+- `provider_hash` (path, required): Provider hash
+
+**Request Body**:
+
+```json
+{
+  "is_active": false
+}
+```
+
+**Response** (200 OK): Same shape as [Create Provider](#create-provider)
+
+**Notes**:
+
+- Inactive providers cannot authenticate or access the Provider API
+
+---
+
+#### Update Provider URL
+
+Update a provider's URL.
+
+**Endpoint**: `PATCH /api/v1/admin/providers/{provider_hash}/url`
+
+**Parameters**:
+
+- `provider_hash` (path, required): Provider hash
+
+**Request Body**:
+
+```json
+{
+  "provider_url": "https://t.me/newbot"
+}
+```
+
+**Response** (200 OK): Same shape as [Create Provider](#create-provider)
+
+---
+
+#### Update Provider Name
+
+Update a provider's display name.
+
+**Endpoint**: `PATCH /api/v1/admin/providers/{provider_hash}/name`
+
+**Parameters**:
+
+- `provider_hash` (path, required): Provider hash
+
+**Request Body**:
+
+```json
+{
+  "provider_name": "vpn123-renamed"
+}
+```
+
+**Response** (200 OK): Same shape as [Create Provider](#create-provider)
+
+---
+
+#### Refresh Provider Token
+
+Generate a new API token for a provider.
+
+**Endpoint**: `POST /api/v1/admin/providers/refresh-token`
+
+**Request Body**:
+
+```json
+{
+  "provider_hash": "a1b2c3d4e5f6..."
+}
+```
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_hash": "a1b2c3d4e5f6...",
+  "new_api_token": "q1w2e3r4t5y6u7i8o9p0"
+}
+```
+
+**Notes**:
+
+- Old token is immediately invalidated
 
 ---
 
@@ -1135,6 +1519,7 @@ interface SourceInput {
 interface Subscription {
   token: string; // Unique subscription token
   name: string; // User-defined name (1-64 chars)
+  provider_name: string | null; // Name of the managing provider, or null for self-service
   description: string | null; // Optional description (max 64 chars)
   sources: Source[]; // Array of sources
   sources_count: number; // Total resolved configs count
@@ -1149,10 +1534,32 @@ interface Subscription {
 interface SubscriptionListItem {
   token: string;
   name: string;
+  provider_name: string | null; // Name of the managing provider, or null for self-service
   description: string | null;
   sources_count: number;
   created_at: string;
   updated_at: string;
+}
+```
+
+### Provider Connection Response
+
+Returned by the Provider API's connection-management endpoints (`GET`/`POST` `/api/v1/providers/{user_id}`, `POST /api/v1/providers/{user_id}/revoke`).
+
+```typescript
+interface ProviderConnectionResponse {
+  user_id: number; // User ID
+  status: "approved" | "revoked"; // Current authorization status
+}
+```
+
+### Provider Connection Delete Response
+
+Returned by `DELETE /api/v1/providers/{user_id}`.
+
+```typescript
+interface ProviderConnectionDeleteResponse {
+  detail: string; // Operation result message
 }
 ```
 
@@ -1176,25 +1583,26 @@ All errors follow this structure:
 
 ### Error Codes
 
-| Code                     | HTTP Status | Description                                         |
-| ------------------------ | ----------- | --------------------------------------------------- |
-| `invalid_token`          | 401         | Invalid or missing API token                        |
-| `forbidden`              | 403         | Access denied (wrong user or inactive account)      |
-| `user_not_found`         | 404         | User does not exist                                 |
-| `not_found`              | 404         | Generic resource not found                          |
-| `subscription_not_found` | 404         | Subscription does not exist                         |
-| `source_not_found`       | 404         | Source ID not found                                 |
-| `invalid_config`         | 400         | Invalid proxy configuration URI                     |
-| `invalid_url`            | 400         | Invalid URL format                                  |
-| `duplicate_name`         | 409         | Subscription name already exists                    |
-| `circular_reference`     | 500         | Circular reference detected in subscription chain   |
-| `nesting_too_deep`       | 500         | Subscription nesting exceeds max depth (default: 3) |
-| `too_many_configs`       | 413         | Resolved configs exceed limit (default: 150)        |
-| `too_many_sources`       | 413         | Sources exceed limit (default: 150)                 |
-| `too_many_subscriptions` | 403         | User subscription limit reached (default: 3)        |
-| `too_many_requests`      | 429         | Rate limit exceeded                                 |
-| `fetch_error`            | 502         | Failed to fetch external URL                        |
-| `cache_error`            | 500         | Cache operation failed                              |
+| Code                      | HTTP Status | Description                                            |
+| ------------------------- | ----------- | ------------------------------------------------------ |
+| `invalid_token`           | 401         | Invalid or missing API token                           |
+| `forbidden`               | 403         | Access denied (wrong user or inactive account)         |
+| `user_not_found`          | 404         | User does not exist                                    |
+| `not_found`               | 404         | Generic resource not found                             |
+| `subscription_not_found`  | 404         | Subscription does not exist                            |
+| `source_not_found`        | 404         | Source ID not found                                    |
+| `invalid_config`          | 400         | Invalid proxy configuration URI                        |
+| `invalid_url`             | 400         | Invalid URL format                                     |
+| `duplicate_name`          | 409         | Subscription name already exists                       |
+| `circular_reference`      | 500         | Circular reference detected in subscription chain      |
+| `nesting_too_deep`        | 500         | Subscription nesting exceeds max depth (default: 3)    |
+| `too_many_configs`        | 413         | Resolved configs exceed limit (default: 150)           |
+| `too_many_sources`        | 413         | Sources exceed limit (default: 150)                    |
+| `too_many_subscriptions`  | 403         | User subscription limit reached (default: 3)           |
+| `too_many_approved_users` | 422         | Provider's approved-user limit reached (default: 1000) |
+| `too_many_requests`       | 429         | Rate limit exceeded                                    |
+| `fetch_error`             | 502         | Failed to fetch external URL                           |
+| `cache_error`             | 500         | Cache operation failed                                 |
 
 ### Validation Errors
 
@@ -1247,7 +1655,7 @@ curl -X POST https://api.example.com/api/v1/admin/users \
 {
   "user_hash": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
   "user_id": 12345,
-  "api_token": "12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+  "api_token": "q1w2e3r4t5y6u7i8o9p0",
   "is_active": true
 }
 ```
@@ -1257,7 +1665,7 @@ curl -X POST https://api.example.com/api/v1/admin/users \
 ```bash
 curl -X POST https://api.example.com/api/v1/subs \
   -H "Content-Type: application/json" \
-  -H "API-Token: 12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" \
+  -H "API-Token: q1w2e3r4t5y6u7i8o9p0" \
   -d '{
     "name": "My Servers",
     "description": "Personal VPN collection",
@@ -1274,7 +1682,7 @@ curl -X POST https://api.example.com/api/v1/subs \
 ```bash
 curl -X POST https://api.example.com/api/v1/subs/abc123xyz456/sources \
   -H "Content-Type: application/json" \
-  -H "API-Token: 12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" \
+  -H "API-Token: q1w2e3r4t5y6u7i8o9p0" \
   -d '{
     "sources": [
       "trojan://password@server3.com:443#Server3"
@@ -1287,7 +1695,7 @@ curl -X POST https://api.example.com/api/v1/subs/abc123xyz456/sources \
 ```bash
 curl -X PATCH https://api.example.com/api/v1/subs/abc123xyz456/config \
   -H "Content-Type: application/json" \
-  -H "API-Token: 12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" \
+  -H "API-Token: q1w2e3r4t5y6u7i8o9p0" \
   -d '{
     "config_id": "config_hash_value",
     "comment": "Fast US Server",
@@ -1304,6 +1712,34 @@ curl https://api.example.com/sub/abc123xyz456
 ```
 
 **Response**: Base64-encoded configs ready for VPN client import
+
+#### 6. Provider: Connect and Manage a User's Subscription
+
+```bash
+# Provider requests a connection for user_id 12345
+curl -X POST https://api.example.com/api/v1/providers/12345 \
+  -H "API-Token: prov_a1B2c3D4e5F6g7H8i9J0"
+```
+
+**Response**:
+
+```json
+{
+  "user_id": 12345,
+  "status": "approved"
+}
+```
+
+```bash
+# Provider creates a subscription on behalf of that user
+curl -X POST https://api.example.com/api/v1/providers/12345/subs \
+  -H "Content-Type: application/json" \
+  -H "API-Token: q1w2e3r4t5y6u7i8o9p0" \
+  -d '{
+    "name": "Managed VPN",
+    "sources": ["vless://uuid@server:port#Server1"]
+  }'
+```
 
 ---
 
@@ -1358,7 +1794,7 @@ class VPNSubscriptionClient:
 # Usage
 client = VPNSubscriptionClient(
     base_url="https://api.example.com",
-    api_token="12345:a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+    api_token="q1w2e3r4t5y6u7i8o9p0"
 )
 
 # Create subscription
@@ -1457,14 +1893,15 @@ print(f"IP banned until: {ban['banned_until']}")
 
 Default configuration limits (can be customized via environment variables):
 
-| Parameter                    | Default | Environment Variable           |
-| ---------------------------- | ------- | ------------------------------ |
-| Max subscriptions per user   | 3       | `MAX_SUBSCRIPTIONS_PER_USER`   |
-| Max sources per subscription | 150     | `MAX_SOURCES_PER_SUBSCRIPTION` |
-| Max configs per subscription | 150     | `MAX_CONFIGS_PER_SUBSCRIPTION` |
-| Max nesting depth            | 3       | `MAX_NESTING_DEPTH`            |
-| Fetch timeout                | 3s      | `FETCH_TIMEOUT`                |
-| Redis TTL                    | 600s    | `REDIS_TTL`                    |
+| Parameter                       | Default | Environment Variable           |
+| ------------------------------- | ------- | ------------------------------ |
+| Max subscriptions per user      | 3       | `MAX_SUBSCRIPTIONS_PER_USER`   |
+| Max sources per subscription    | 150     | `MAX_SOURCES_PER_SUBSCRIPTION` |
+| Max configs per subscription    | 150     | `MAX_CONFIGS_PER_SUBSCRIPTION` |
+| Max nesting depth               | 3       | `MAX_NESTING_DEPTH`            |
+| Fetch timeout                   | 3s      | `FETCH_TIMEOUT`                |
+| Redis TTL                       | 600s    | `REDIS_TTL`                    |
+| Max approved users per provider | 1000    | `MAX_PROVIDER_USERS`           |
 
 ---
 
@@ -1497,5 +1934,5 @@ Default configuration limits (can be customized via environment variables):
 
 For issues, questions, or feature requests, please contact the API maintainer or open an issue in the project repository.
 
-**API Version**: 1.0.4
-**Last Updated**: August 1, 2026
+**API Version**: 1.1.0
+**Last Updated**: August 15, 2026

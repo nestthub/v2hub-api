@@ -55,9 +55,6 @@ class UserService:
     def _generate_api_token(self) -> str:
         """
         Generate API token bound to user_id.
-
-        Returns:
-            Token in format: {user_id}:{random_token}
         """
         token = secrets.token_urlsafe(settings.api_token_length)
         return token
