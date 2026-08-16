@@ -40,7 +40,20 @@ jobs:
           PORT: ${{ secrets.PORT }}
           USER: ${{ secrets.USER }}
           SSH_KEY: ${{ secrets.SSH_KEY }}
-
+      - name: Resolve commit to deploy
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            sha="${{ github.sha }}"
+          else
+            sha="${{ github.event.workflow_run.head_sha }}"
+          fi
+          if [ -z "$sha" ]; then
+            echo "Could not resolve a commit SHA to deploy"
+            exit 1
+          fi
+          echo "Deploying commit: $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
@@ -52,19 +65,23 @@ jobs:
           ssh-keyscan -p "${{ secrets.PORT }}" -H "${{ secrets.HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Deploy application (pull, rebuild, recreate containers)
+        env:
+          DEPLOY_SHA: ${{ steps.resolve.outputs.sha }}
         run: |
           set -e
           ssh -i ~/.ssh/deploy_key -p "${{ secrets.PORT }}" \
               -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile=~/.ssh/known_hosts \
-              "${{ secrets.USER }}@${{ secrets.HOST }}" bash -s <<'EOF'
+              "${{ secrets.USER }}@${{ secrets.HOST }}" \
+              "DEPLOY_SHA='${DEPLOY_SHA}' bash -s" <<'EOF'
             set -euo pipefail
             set -x
             cd /root/v2hub-api
 
-            echo "=== Fetching latest changes from origin/main ==="
-            git fetch origin
-            git reset --hard origin/main
+            echo "=== Fetching commit ${DEPLOY_SHA} ==="
+                git fetch origin "${DEPLOY_SHA}"
+                git checkout --force "${DEPLOY_SHA}"
+                echo "=== Now at commit: $(git rev-parse HEAD) ==="
 
             echo "=== Pulling prebuilt images if available ==="
             docker compose pull || true
@@ -92,7 +109,7 @@ jobs:
             fi
 
             echo "=== Running database migrations ==="
-            docker compose run --rm --no-deps api alembic upgrade head
+            docker compose run --rm --no-deps api alembic upgrade head < /dev/null
 
             echo "=== Starting application ==="
             docker compose up -d --force-recreate
