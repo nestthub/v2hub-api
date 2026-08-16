@@ -119,6 +119,10 @@ async def verify_request_signature(
     # Create signature payload
     method = request.method
     path = str(request.url.path)
+
+    if request.url.query:
+        path = f"{path}?{request.url.query}"
+
     payload = f"{x_timestamp}{method}{path}{body.decode('utf-8')}"
 
     # Calculate expected signature
