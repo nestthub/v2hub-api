@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 
 from v2hub_api.main import app
-from v2hub_api.api.endpoints.admin import verify_request_signature, verify_internal_ip
+from v2hub_api.api.endpoints.admin.dependencies import verify_request_signature, verify_internal_ip
 from v2hub_api.api.dependencies import get_stats_service
 from v2hub_api.schemas import StatsResponse, GeneralStats
 
