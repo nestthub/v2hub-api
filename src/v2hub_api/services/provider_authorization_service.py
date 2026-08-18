@@ -11,8 +11,9 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from v2hub_api.core.enums import ProviderAuthorizationStatus
 from v2hub_api.core.exceptions import AuthorizationError, NotFoundError
-from v2hub_api.db.models import ProviderAuthorization, ProviderAuthorizationStatus
+from v2hub_api.db.models import ProviderAuthorization
 from v2hub_api.db.repositories.provider_authorization_repository import (
     ProviderAuthorizationRepository,
 )

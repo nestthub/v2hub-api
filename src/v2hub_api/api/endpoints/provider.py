@@ -8,12 +8,12 @@ from v2hub_api.api.dependencies import (
     UserServiceDep,
 )
 from v2hub_api.core.config import settings
+from v2hub_api.core.enums import ProviderAuthorizationStatus
 from v2hub_api.core.exceptions import (
     AuthenticationError,
     TooManyApprovedUsersError,
     to_http_exception,
 )
-from v2hub_api.db.models.provider_authorization import ProviderAuthorizationStatus
 from v2hub_api.schemas.base_models import (
     ProviderConnectionDeleteResponse,
     ProviderConnectionResponse,

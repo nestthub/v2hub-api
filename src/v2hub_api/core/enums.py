@@ -104,3 +104,9 @@ class ErrorCode(StrEnum):
 
     def __str__(self) -> str:
         return self.value
+
+
+class ProviderAuthorizationStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REVOKED = "revoked"

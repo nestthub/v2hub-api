@@ -20,10 +20,18 @@ from .subscriptions import (
     SubscriptionResponse,
     SubscriptionUpdateRequest,
 )
+from .users import (
+    ConnectionResponse,
+    ConnectionsResponse,
+    MeResponse,
+)
 
 __all__ = [
     "BaseModelConfig",
     "CommentUpdateRequest",
+    "ConnectionResponse",
+    "ConnectionsResponse",
+    "MeResponse",
     "ProviderConnectionDeleteResponse",
     "ProviderConnectionRequest",
     "ProviderConnectionResponse",

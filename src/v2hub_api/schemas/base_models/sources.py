@@ -12,12 +12,12 @@ from .base import BaseModelConfig
 
 class SourceOut(BaseModelConfig):
     """
-    Упрощенная модель источника для API.
+    Simplified source model for the API.
 
-    Поле data содержит:
-    - Для CONFIG: конфиг с комментом (если есть)
-    - Для EXTERNAL_URL: URL подписки
-    - Для INTERNAL_TOKEN: токен другой подписки
+    The `data` field contains:
+    - For CONFIG: the configuration with an optional comment
+    - For EXTERNAL_URL: the subscription URL
+    - For INTERNAL_TOKEN: the token of another subscription
     """
 
     id: Annotated[str, Field(description="Unique source identifier (hash)", min_length=1)]

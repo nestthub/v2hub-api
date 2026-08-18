@@ -23,6 +23,9 @@ from .admin_models import (
 )
 from .base_models import (
     BaseModelConfig,
+    ConnectionResponse,
+    ConnectionsResponse,
+    MeResponse,
     RefreshSubscriptionResponse,
     ResolvedConfig,
     SourceCreateRequest,
@@ -41,6 +44,8 @@ from .base_models import (
 __all__ = [
     "AdminBaseModel",
     "BaseModelConfig",
+    "ConnectionResponse",
+    "ConnectionsResponse",
     "GeneralStats",
     "IPBanEntry",
     "IPBanListResponse",
@@ -48,6 +53,7 @@ __all__ = [
     "IPBanStatusResponse",
     "IPUnbanRequest",
     "IPUnbanResponse",
+    "MeResponse",
     "RefreshSubscriptionResponse",
     "ResolvedConfig",
     "SourceCreateRequest",

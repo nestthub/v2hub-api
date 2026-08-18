@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING, cast
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from v2hub_api.db.models import ProviderAuthorization, ProviderAuthorizationStatus
+from v2hub_api.core.enums import ProviderAuthorizationStatus
+from v2hub_api.db.models import ProviderAuthorization
 from v2hub_api.db.repositories.base import BaseRepository
 
 if TYPE_CHECKING:

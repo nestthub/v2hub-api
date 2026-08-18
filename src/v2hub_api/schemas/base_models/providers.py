@@ -1,6 +1,6 @@
 from pydantic import Field
 
-from v2hub_api.db.models.provider_authorization import ProviderAuthorizationStatus
+from v2hub_api.core.enums import ProviderAuthorizationStatus
 
 from .base import BaseModelConfig
 
