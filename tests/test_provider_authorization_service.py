@@ -8,8 +8,8 @@ routes, and listing.
 
 import pytest
 
+from v2hub_api.core.enums import ProviderAuthorizationStatus
 from v2hub_api.core.exceptions import AuthorizationError, NotFoundError
-from v2hub_api.db.models import ProviderAuthorizationStatus
 from v2hub_api.services.provider_authorization_service import ProviderAuthorizationService
 from v2hub_api.services.provider_service import ProviderService
 from v2hub_api.services.subscription_service import SubscriptionService

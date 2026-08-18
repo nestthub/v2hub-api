@@ -12,8 +12,8 @@ import pytest
 
 from v2hub_api.core.enums import SourceType
 from v2hub_api.core.exceptions import (
-    AuthorizationError,
     AuthenticationError,
+    AuthorizationError,
     CircularReferenceError,
     DuplicateNameError,
     InvalidConfigError,

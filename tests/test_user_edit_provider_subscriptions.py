@@ -24,10 +24,11 @@ Two layers are covered:
   block is visible at the API boundary and not just inside the service.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import FastAPI
 from starlette.testclient import TestClient
-from unittest.mock import AsyncMock
 
 from v2hub_api.api.dependencies import ResolverServiceDep, SubscriptionServiceDep, get_actor
 from v2hub_api.api.endpoints import subscriptions

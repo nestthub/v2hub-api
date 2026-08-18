@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum, ForeignKey, Index, PrimaryKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from v2hub_api.core.enums import ProviderAuthorizationStatus
+
 from . import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from . import Provider, User
-
-
-class ProviderAuthorizationStatus(StrEnum):
-    APPROVED = "approved"
-    REVOKED = "revoked"
 
 
 class ProviderAuthorization(TimestampMixin, Base):

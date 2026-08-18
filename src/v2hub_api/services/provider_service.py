@@ -368,6 +368,21 @@ class ProviderService:
         """
         return await self.provider_repo.get_by_hash(provider_hash)
 
+    async def get_by_name(
+        self,
+        provider_name: str,
+    ) -> Provider | None:
+        """
+        Get provider by provider name.
+
+        Args:
+            provider_name: Provider name.
+
+        Returns:
+            Provider or None if not found.
+        """
+        return await self.provider_repo.get_by_name(provider_name)
+
     async def get_by_owner_hash(
         self,
         owner_hash: str,

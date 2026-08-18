@@ -2,7 +2,7 @@ from .base import Base, TimestampMixin, utcnow
 from .config_comments import ConfigComment
 from .external_cache import ExternalCache
 from .provider import Provider
-from .provider_authorization import ProviderAuthorization, ProviderAuthorizationStatus
+from .provider_authorization import ProviderAuthorization
 from .proxy_config import ProxyConfig
 from .source import Source
 from .subscription import Subscription
@@ -14,7 +14,6 @@ __all__ = [
     "ExternalCache",
     "Provider",
     "ProviderAuthorization",
-    "ProviderAuthorizationStatus",
     "ProxyConfig",
     "Source",
     "Subscription",
