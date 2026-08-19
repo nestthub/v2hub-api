@@ -54,19 +54,19 @@ class Subscription(TimestampMixin, Base):
     )
 
     token: Mapped[str] = mapped_column(
-        String(255), primary_key=True, comment="Unique public identifier for subscription"
+        String(43), primary_key=True, comment="Unique public identifier for subscription"
     )
     name: Mapped[str] = mapped_column(
         String(64), nullable=False, comment="User-defined name for subscription"
     )
     user_hash: Mapped[str] = mapped_column(
-        String(255),
+        String(36),
         ForeignKey("users.user_hash", ondelete="CASCADE"),
         nullable=False,
     )
 
     provider_hash: Mapped[str | None] = mapped_column(
-        String(255),
+        String(36),
         ForeignKey("providers.provider_hash", ondelete="CASCADE"),
         nullable=True,
         comment="Provider that owns this subscription. NULL for user-owned subscriptions.",

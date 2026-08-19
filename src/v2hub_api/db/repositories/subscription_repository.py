@@ -241,11 +241,19 @@ class SubscriptionRepository(BaseRepository[Subscription]):
 
     async def generate_unique_token(
         self,
-        length: int = 32,
+        nbytes: int = 32,
     ) -> str:
-        """Generate a unique subscription token."""
+        """
+        Generate a unique, cryptographically secure subscription token.
+
+        Args:
+            nbytes: Number of random bytes used to generate the token.
+
+        Returns:
+            A unique URL-safe Base64-encoded token, 43 characters long.
+        """
         while True:
-            token = secrets.token_urlsafe(length)
+            token = secrets.token_urlsafe(nbytes)
 
             if not await self.exists(token=token):
                 return token

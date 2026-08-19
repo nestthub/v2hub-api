@@ -31,7 +31,7 @@ class ExternalCache(TimestampMixin, Base):
     __tablename__ = "external_cache"
 
     url_hash: Mapped[str] = mapped_column(
-        String(64), primary_key=True, comment="Blake2b hash of canonical URL"
+        String(32), primary_key=True, comment="Blake2b hash of canonical URL"
     )
     url: Mapped[str] = mapped_column(
         Text, nullable=False, comment="Original external subscription URL"

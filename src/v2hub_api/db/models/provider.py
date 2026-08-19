@@ -24,13 +24,13 @@ class Provider(TimestampMixin, Base):
     __tablename__ = "providers"
 
     provider_hash: Mapped[str] = mapped_column(
-        String(255),
+        String(36),
         primary_key=True,
         comment="Unique public identifier of the provider",
     )
 
     owner_hash: Mapped[str] = mapped_column(
-        String(255),
+        String(36),
         ForeignKey("users.user_hash", ondelete="CASCADE"),
         unique=True,
         nullable=False,
@@ -38,11 +38,11 @@ class Provider(TimestampMixin, Base):
     )
 
     provider_name: Mapped[str] = mapped_column(
-        String(64), unique=True, nullable=False, comment="Unique provider name."
+        String(16), unique=True, nullable=False, comment="Unique provider name."
     )
 
     api_token: Mapped[str] = mapped_column(
-        String(255),
+        String(43),
         unique=True,
         nullable=False,
         index=True,

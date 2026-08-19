@@ -30,13 +30,13 @@ class ProxyConfig(TimestampMixin, Base):
     __tablename__ = "proxy_configs"
 
     config_hash: Mapped[str] = mapped_column(
-        String(64), primary_key=True, comment="Blake2b hash of normalized config (without fragment)"
+        String(32), primary_key=True, comment="Blake2b hash of normalized config (without fragment)"
     )
     config_data: Mapped[str] = mapped_column(
         Text, nullable=False, comment="Proxy configuration URI without fragment"
     )
     protocol: Mapped[str] = mapped_column(
-        String(50),
+        String(16),
         nullable=False,
         index=True,
         comment="Proxy protocol (vless, vmess, trojan, ss, etc.)",

@@ -41,20 +41,19 @@ class UserService:
 
     def _generate_user_hash(self) -> str:
         """
-        Generate stable hash from user ID.
-
-        Args:
-            user_id: External user ID
+        Generate a unique identifier for a user.
 
         Returns:
-            User hash
+            A UUID4 string representation, 36 characters long.
         """
-        # Combine user_id with secret for uniqueness
         return str(uuid.uuid4())
 
     def _generate_api_token(self) -> str:
         """
-        Generate API token bound to user_id.
+        Generate a cryptographically secure API token.
+
+        Returns:
+            URL-safe Base64-encoded token generated from random bytes.
         """
         token = secrets.token_urlsafe(settings.api_token_length)
         return token

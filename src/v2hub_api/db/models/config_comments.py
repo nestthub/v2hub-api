@@ -44,13 +44,13 @@ class ConfigComment(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     subscription_token: Mapped[str] = mapped_column(
-        String(255),
+        String(43),
         ForeignKey("subscriptions.token", ondelete="CASCADE"),
         nullable=False,
         comment="Subscription this comment belongs to",
     )
     config_hash: Mapped[str] = mapped_column(
-        String(64),
+        String(32),
         ForeignKey("proxy_configs.config_hash", ondelete="CASCADE"),
         nullable=False,
         comment="Config this comment applies to",

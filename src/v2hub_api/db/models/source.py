@@ -42,21 +42,21 @@ class Source(TimestampMixin, Base):
     )
 
     subscription_token: Mapped[str] = mapped_column(
-        String(255),
+        String(43),
         ForeignKey("subscriptions.token", ondelete="CASCADE"),
         nullable=False,
     )
 
     id: Mapped[str] = mapped_column(
-        String(64), nullable=False, comment="Unique identifier for this source within subscription"
+        String(32), nullable=False, comment="Unique identifier for this source within subscription"
     )
     source_type: Mapped[str] = mapped_column(
-        String(50), nullable=False, comment="Type: CONFIG, EXTERNAL_URL, or INTERNAL_TOKEN"
+        String(15), nullable=False, comment="Type: CONFIG, EXTERNAL_URL, or INTERNAL_TOKEN"
     )
 
     # For CONFIG type: references proxy_configs table
     config_hash: Mapped[str | None] = mapped_column(
-        String(64),
+        String(32),
         ForeignKey("proxy_configs.config_hash", ondelete="SET NULL"),
         nullable=True,
         comment="Reference to ProxyConfig (for CONFIG type)",
@@ -64,7 +64,7 @@ class Source(TimestampMixin, Base):
 
     # For INTERNAL_TOKEN types: stores the token
     internal_token: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, comment="Token for INTERNAL_TOKEN"
+        String(43), nullable=True, comment="Token for INTERNAL_TOKEN"
     )
 
     # For EXTERNAL_URL types: stores the URL
