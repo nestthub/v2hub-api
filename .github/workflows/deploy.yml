@@ -64,128 +64,121 @@ jobs:
         run: |
           ssh-keyscan -p "${{ secrets.PORT }}" -H "${{ secrets.HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy application (pull, rebuild, recreate containers)
+      - name: Deploy, migrate, and verify health (single SSH session)
         env:
           DEPLOY_SHA: ${{ steps.resolve.outputs.sha }}
         run: |
-          set -e
+          set -euo pipefail
           ssh -i ~/.ssh/deploy_key -p "${{ secrets.PORT }}" \
-              -o StrictHostKeyChecking=yes \
-              -o UserKnownHostsFile=~/.ssh/known_hosts \
-              "${{ secrets.USER }}@${{ secrets.HOST }}" \
-              "DEPLOY_SHA='${DEPLOY_SHA}' bash -s" <<'EOF'
-            set -euo pipefail
-            set -x
-            cd /root/v2hub-api
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o BatchMode=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
+            "${{ secrets.USER }}@${{ secrets.HOST }}" \
+            "DEPLOY_SHA='${DEPLOY_SHA}' bash -s" <<'EOF'
+          set -euo pipefail
+          set -x
 
-            echo "=== Fetching commit ${DEPLOY_SHA} ==="
-                git fetch origin "${DEPLOY_SHA}"
-                git checkout --force "${DEPLOY_SHA}"
-                echo "=== Now at commit: $(git rev-parse HEAD) ==="
+          cd ~/v2hub-api
 
-            echo "=== Pulling prebuilt images if available ==="
-            docker compose pull || true
+          echo "=== Fetching commit ${DEPLOY_SHA} ==="
+          git fetch origin "${DEPLOY_SHA}" < /dev/null
+          git checkout --force "${DEPLOY_SHA}" < /dev/null
+          echo "=== Now at commit: $(git rev-parse HEAD) ==="
 
-            echo "=== Building images ==="
-            docker compose build
+          echo "=== Pulling prebuilt images if available ==="
+          docker compose pull < /dev/null || true
 
-            echo "=== Starting database ==="
-            docker compose up -d postgres
+          echo "=== Building images ==="
+          docker compose build < /dev/null
 
-            echo "=== Waiting for database ==="
-            db_ready=0
-            for i in $(seq 1 30); do
-                if docker compose exec -T postgres pg_isready >/dev/null 2>&1; then
-                    echo "Database is ready."
-                    db_ready=1
-                    break
-                fi
-                sleep 2
-            done
-            if [ "$db_ready" -ne 1 ]; then
-                echo "Database did not become ready."
-                docker compose logs --tail=200 postgres
-                exit 1
+          echo "=== Starting database ==="
+          docker compose up -d postgres < /dev/null
+
+          echo "=== Waiting for database ==="
+          db_ready=0
+          for i in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready < /dev/null; then
+              echo "Database is ready."
+              db_ready=1
+              break
             fi
+            sleep 2
+          done
 
-            echo "=== Running database migrations ==="
-            docker compose run --rm --no-deps api alembic upgrade head < /dev/null
+          if [ "$db_ready" -ne 1 ]; then
+            echo "ERROR: Database did not become ready."
+            docker compose logs --tail=200 postgres
+            exit 1
+          fi
 
-            echo "=== Starting application ==="
-            docker compose up -d --force-recreate
+          echo "=== Running database migrations ==="
+          docker compose run --rm --no-deps api alembic upgrade head < /dev/null
 
-            echo "=== Checking api directly (bypassing nginx) before restarting nginx ==="
-            api_ready=0
-            attempts=30
-            delay=2
-            for i in $(seq 1 "$attempts"); do
-              status=$(docker compose exec -T api python -c "import urllib.request as u; print(u.urlopen('http://localhost:8000/health', timeout=3).status)" 2>/dev/null || echo "000")
-              echo "Attempt $i/$attempts: api direct health = $status"
-              if [ "$status" = "200" ]; then
-                api_ready=1
-                break
-              fi
-              sleep "$delay"
-            done
-            if [ "$api_ready" -ne 1 ]; then
-              echo "api never became ready directly, aborting before nginx restart to avoid downtime."
-              docker compose logs --tail=200 api
-              exit 1
+          echo "=== Starting application ==="
+          docker compose up -d --force-recreate < /dev/null
+
+          echo "=== Checking api directly (bypassing nginx) before restarting nginx ==="
+          api_ready=0
+          attempts=30
+          delay=2
+          for i in $(seq 1 "$attempts"); do
+            status=$(docker compose exec -T api python -c "import urllib.request as u; print(u.urlopen('http://localhost:8000/health', timeout=3).status)" < /dev/null 2>/dev/null || echo "000")
+            echo "Attempt $i/$attempts: api direct health = $status"
+            if [ "$status" = "200" ]; then
+              api_ready=1
+              break
             fi
-            echo "api is directly reachable, proceeding to restart nginx."
+            sleep "$delay"
+          done
 
-            echo "=== Restarting nginx to refresh upstream DNS resolution ==="
-            docker compose restart nginx
+          if [ "$api_ready" -ne 1 ]; then
+            echo "ERROR: api never became ready directly, aborting before nginx restart to avoid downtime."
+            docker compose logs --tail=200 api
+            exit 1
+          fi
 
-            echo "=== Cleaning up dangling images and build cache ==="
-            docker image prune -f
-            docker builder prune -f
+          echo "api is directly reachable, proceeding to restart nginx."
+          echo "=== Restarting nginx to refresh upstream DNS resolution ==="
+          docker compose restart nginx < /dev/null
 
-            echo "=== DEPLOY SCRIPT COMPLETED SUCCESSFULLY ==="
+          echo "=== Verifying /health through nginx (same session, same deployed commit) ==="
+          attempts=30
+          delay=5
+          success=0
+          for i in $(seq 1 "$attempts"); do
+            status=$(curl -sk -o /dev/null -w "%{http_code}" -L https://localhost/health < /dev/null || echo "000")
+            echo "Attempt $i/$attempts: HTTP $status"
+            if [ "$status" = "200" ]; then
+              success=1
+              break
+            fi
+            sleep "$delay"
+          done
+
+          if [ "$success" -ne 1 ]; then
+            echo "ERROR: /health via nginx did not return 200 after $attempts attempts."
+            echo "----- docker compose ps -----"
+            docker compose ps < /dev/null
+            echo "----- docker compose logs (last 200 lines) -----"
+            docker compose logs --tail=200 < /dev/null
+            exit 1
+          fi
+
+          echo "=== Verifying the running commit matches the deployed commit ==="
+          running_sha="$(git rev-parse HEAD < /dev/null)"
+          if [ "$running_sha" != "${DEPLOY_SHA}" ]; then
+            echo "ERROR: running commit ($running_sha) does not match target commit (${DEPLOY_SHA})"
+            exit 1
+          fi
+
+          echo "=== Cleaning up dangling images and build cache ==="
+          docker image prune -f < /dev/null
+          docker builder prune -f < /dev/null
+
+          echo "=== DEPLOY SCRIPT COMPLETED SUCCESSFULLY: commit ${DEPLOY_SHA} is live and /health returned HTTP 200 ==="
           EOF
-          echo "SSH deploy step exit code: $?"
-
-      - name: Wait for application health check
-        run: |
-          set -e
-          ssh -i ~/.ssh/deploy_key -p "${{ secrets.PORT }}" \
-              -o StrictHostKeyChecking=yes \
-              -o UserKnownHostsFile=~/.ssh/known_hosts \
-              "${{ secrets.USER }}@${{ secrets.HOST }}" bash -s <<'EOF'
-            set -euo pipefail
-            set -x
-            cd /root/v2hub-api
-
-            echo "=== Current container status ==="
-            docker compose ps
-
-            echo "=== Waiting for /health to return HTTP 200 ==="
-            attempts=30
-            delay=5
-            success=0
-
-            for i in $(seq 1 "$attempts"); do
-              status=$(curl -sk -o /dev/null -w "%{http_code}" -L https://localhost/health || echo "000")
-              echo "Attempt $i/$attempts: HTTP $status"
-              if [ "$status" = "200" ]; then
-                success=1
-                break
-              fi
-              sleep "$delay"
-            done
-
-            if [ "$success" -ne 1 ]; then
-              echo "Health check failed after $attempts attempts."
-              echo "----- docker compose ps -----"
-              docker compose ps
-              echo "----- docker compose logs (last 200 lines) -----"
-              docker compose logs --tail=200
-              exit 1
-            fi
-
-            echo "=== HEALTHCHECK SCRIPT COMPLETED SUCCESSFULLY: /health returned HTTP 200 ==="
-          EOF
-          echo "SSH healthcheck step exit code: $?"
 
       - name: Clean up local SSH key
         if: always()
