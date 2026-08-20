@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from pydantic import ConfigDict, Field
 
 from .base import AdminBaseModel
@@ -6,9 +8,9 @@ from .base import AdminBaseModel
 class ProviderCreateRequest(AdminBaseModel):
     """Request model for creating a new provider."""
 
-    owner_hash: str = Field(..., description="Provider`s owner hash")
-    provider_name: str = Field(..., description="Provider name")
-    provider_url: str | None = Field(None, description="Provider address url")
+    owner_hash: str = Field(..., description="Provider`s owner hash", min_length=36, max_length=36)
+    provider_name: str = Field(..., description="Provider name", min_length=4, max_length=16)
+    provider_url: str | None = Field(None, description="Provider address url", max_length=255)
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -24,11 +26,11 @@ class ProviderCreateRequest(AdminBaseModel):
 class ProviderResponse(AdminBaseModel):
     """Response model for provider."""
 
-    provider_hash: str = Field(..., description="Provider hash")
-    owner_hash: str = Field(..., description="Owner hash")
-    provider_name: str = Field(..., description="Provider name")
-    api_token: str = Field(..., description="Generated API token")
-    provider_url: str | None = Field(..., description="Provider url")
+    provider_hash: str = Field(..., description="Provider hash", min_length=36, max_length=36)
+    owner_hash: str = Field(..., description="Owner hash", min_length=36, max_length=36)
+    provider_name: str = Field(..., description="Provider name", min_length=4, max_length=16)
+    api_token: str = Field(..., description="Generated API token", min_length=43, max_length=43)
+    provider_url: str | None = Field(description="Provider url", max_length=255)
     is_active: bool = Field(..., description="Account status")
 
     model_config = ConfigDict(
@@ -48,7 +50,10 @@ class ProviderResponse(AdminBaseModel):
 class AllProvidersResponse(AdminBaseModel):
     """Response model for all providers."""
 
-    provider_hashes: dict[str, str] = Field(
+    provider_hashes: dict[
+        Annotated[str, Field(min_length=4, max_length=16)],
+        Annotated[str, Field(min_length=36, max_length=36)],
+    ] = Field(
         ...,
         description="Mapping of provider names to provider hashes",
     )
@@ -74,13 +79,13 @@ class ProviderStatusUpdateRequest(AdminBaseModel):
 class ProviderURLUpdateRequest(AdminBaseModel):
     """Request model for updating provider url."""
 
-    provider_url: str | None
+    provider_url: str | None = Field(max_length=255)
 
 
 class ProviderNameUpdateRequest(AdminBaseModel):
     """Request model for updating provider name."""
 
-    provider_name: str
+    provider_name: str = Field(min_length=4, max_length=16)
 
 
 class ProviderCreateResponse(ProviderResponse):
@@ -92,7 +97,7 @@ class ProviderCreateResponse(ProviderResponse):
 class ProviderTokenRefreshRequest(AdminBaseModel):
     """Request model for refreshing provider token."""
 
-    provider_hash: str = Field(..., description="Provider hash")
+    provider_hash: str = Field(..., description="Provider hash", min_length=36, max_length=36)
 
     model_config = ConfigDict(json_schema_extra={"example": {"provider_hash": "a1b2c3d4e5f6..."}})
 
@@ -100,8 +105,8 @@ class ProviderTokenRefreshRequest(AdminBaseModel):
 class ProviderTokenRefreshResponse(AdminBaseModel):
     """Response model for token refresh."""
 
-    provider_hash: str = Field(..., description="Provider hash")
-    new_api_token: str = Field(..., description="New API token")
+    provider_hash: str = Field(..., description="Provider hash", min_length=36, max_length=36)
+    new_api_token: str = Field(..., description="New API token", min_length=43, max_length=43)
 
     model_config = ConfigDict(
         json_schema_extra={

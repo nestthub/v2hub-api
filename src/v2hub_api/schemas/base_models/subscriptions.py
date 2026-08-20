@@ -11,11 +11,15 @@ from .sources import SourceCreateRequest, SourceOut
 
 
 class SubscriptionBase(BaseModelConfig):
-    token: Annotated[str, Field(description="Unique subscription token", min_length=1)]
+    token: Annotated[
+        str, Field(description="Unique subscription token", min_length=43, max_length=43)
+    ]
     name: Annotated[
         str, Field(description="User-defined subscription name", min_length=1, max_length=64)
     ]
-    provider_name: Annotated[str | None, Field(None, description="Provider name")]
+    provider_name: Annotated[
+        str | None, Field(None, description="Provider name", min_length=4, max_length=16)
+    ]
     description: Annotated[
         str | None, Field(None, description="Optional description", max_length=64)
     ]
@@ -46,7 +50,7 @@ class SubscriptionCreateRequest(BaseModelConfig):
     name: Annotated[str, Field(description="Subscription name", min_length=1, max_length=64)]
     description: Annotated[
         str | None, Field(None, description="Optional description", max_length=64)
-    ] = None
+    ]
     sources: Annotated[
         list[SourceCreateRequest],
         Field(

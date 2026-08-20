@@ -389,7 +389,7 @@ def build_subscriptions_router(
                 token=token,
                 user_hash=actor.user_hash,
                 provider_hash=_provider_hash(actor),
-                config_hash=data.config_id,
+                config_hash=data.config_hash,
                 comment=data.comment or settings.domain,
             )
         except Exception as e:
@@ -412,7 +412,7 @@ def build_subscriptions_router(
                 token=token,
                 user_hash=actor.user_hash,
                 provider_hash=_provider_hash(actor),
-                config_hash=data.config_id,
+                config_hash=data.config_hash,
                 comment=data.comment,
                 is_hidden=data.is_hidden,
                 max_depth=data.max_depth,

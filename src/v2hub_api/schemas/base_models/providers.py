@@ -9,12 +9,15 @@ class ProviderConnectionRequest(BaseModelConfig):
     user_id: int = Field(
         description="Target user ID",
         gt=0,
+        le=999_999_999_999,
     )
 
 
 class ProviderConnectionResponse(BaseModelConfig):
     user_id: int = Field(
         description="User ID",
+        gt=0,
+        le=999_999_999_999,
     )
 
     status: ProviderAuthorizationStatus = Field(
@@ -29,7 +32,5 @@ class ProviderConnectionDeleteResponse(BaseModelConfig):
 
 
 class ProviderInfoResponse(BaseModelConfig):
-    provider_name: str = Field(
-        description="Provider name",
-    )
-    provider_url: str = Field(description="Provider url")
+    provider_name: str = Field(description="Provider name", min_length=4, max_length=16)
+    provider_url: str = Field(description="Provider url", max_length=255)

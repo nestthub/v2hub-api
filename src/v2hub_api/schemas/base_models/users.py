@@ -15,16 +15,14 @@ class ConnectionResponse(BaseModelConfig):
 
     provider_name: Annotated[
         str,
-        Field(
-            description="Provider name",
-            min_length=1,
-        ),
+        Field(description="Provider name", min_length=4, max_length=16),
     ]
 
     provider_url: Annotated[
         str | None,
         Field(
             description="Provider API URL",
+            max_length=255,
         ),
     ]
 
@@ -62,9 +60,7 @@ class MeResponse(BaseModelConfig):
 
     user_id: Annotated[
         int,
-        Field(
-            description="User identifier",
-        ),
+        Field(description="User identifier", gt=0, le=999_999_999_999),
     ]
 
     is_active: Annotated[
