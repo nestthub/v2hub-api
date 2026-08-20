@@ -2,7 +2,7 @@
 
 Revision ID: 0003
 Revises: 0002
-Create Date: 2026-08-19 19:00:00.000000
+Create Date: 2026-08-20 19:00:00.000000
 
 """
 
@@ -44,6 +44,14 @@ def upgrade() -> None:
         existing_type=sa.VARCHAR(length=64),
         type_=sa.String(length=32),
         existing_comment="Blake2b hash of canonical URL",
+        existing_nullable=False,
+    )
+    op.alter_column(
+        "external_cache",
+        "url",
+        existing_type=sa.TEXT(),
+        type_=sa.String(length=255),
+        existing_comment="Original external subscription URL",
         existing_nullable=False,
     )
     op.alter_column(
@@ -148,6 +156,14 @@ def upgrade() -> None:
         existing_nullable=True,
     )
     op.alter_column(
+        "sources",
+        "external_url",
+        existing_type=sa.TEXT(),
+        type_=sa.String(length=255),
+        existing_comment="URL for EXTERNAL_URL",
+        existing_nullable=True,
+    )
+    op.alter_column(
         "subscriptions",
         "token",
         existing_type=sa.VARCHAR(length=255),
@@ -230,6 +246,14 @@ def downgrade() -> None:
         type_=sa.VARCHAR(length=255),
         existing_comment="Unique public identifier for subscription",
         existing_nullable=False,
+    )
+    op.alter_column(
+        "sources",
+        "external_url",
+        existing_type=sa.String(length=255),
+        type_=sa.TEXT(),
+        existing_comment="URL for EXTERNAL_URL",
+        existing_nullable=True,
     )
     op.alter_column(
         "sources",
@@ -330,6 +354,14 @@ def downgrade() -> None:
         "provider_hash",
         existing_type=sa.String(length=36),
         type_=sa.VARCHAR(length=255),
+        existing_nullable=False,
+    )
+    op.alter_column(
+        "external_cache",
+        "url",
+        existing_type=sa.String(length=255),
+        type_=sa.TEXT(),
+        existing_comment="Original external subscription URL",
         existing_nullable=False,
     )
     op.alter_column(
