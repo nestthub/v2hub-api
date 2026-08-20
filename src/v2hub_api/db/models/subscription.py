@@ -10,6 +10,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from v2hub_api.core.constants import (
+    SUBSCRIPTION_DESCRIPTION_MAX_LENGTH,
+    SUBSCRIPTION_NAME_MAX_LENGTH,
+    SUBSCRIPTION_TOKEN_LENGTH,
+    UUID_LENGTH,
+)
 from v2hub_api.db.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
@@ -54,26 +60,32 @@ class Subscription(TimestampMixin, Base):
     )
 
     token: Mapped[str] = mapped_column(
-        String(43), primary_key=True, comment="Unique public identifier for subscription"
+        String(SUBSCRIPTION_TOKEN_LENGTH),
+        primary_key=True,
+        comment="Unique public identifier for subscription",
     )
     name: Mapped[str] = mapped_column(
-        String(64), nullable=False, comment="User-defined name for subscription"
+        String(SUBSCRIPTION_NAME_MAX_LENGTH),
+        nullable=False,
+        comment="User-defined name for subscription",
     )
     user_hash: Mapped[str] = mapped_column(
-        String(36),
+        String(UUID_LENGTH),
         ForeignKey("users.user_hash", ondelete="CASCADE"),
         nullable=False,
     )
 
     provider_hash: Mapped[str | None] = mapped_column(
-        String(36),
+        String(UUID_LENGTH),
         ForeignKey("providers.provider_hash", ondelete="CASCADE"),
         nullable=True,
         comment="Provider that owns this subscription. NULL for user-owned subscriptions.",
     )
 
     description: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, comment="Optional description of subscription purpose"
+        String(SUBSCRIPTION_DESCRIPTION_MAX_LENGTH),
+        nullable=True,
+        comment="Optional description of subscription purpose",
     )
 
     # Relationships

@@ -10,6 +10,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from v2hub_api.core.constants import HASH_LENGTH, URL_MAX_LENGTH
 from v2hub_api.db.models import Base, TimestampMixin
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -31,10 +32,10 @@ class ExternalCache(TimestampMixin, Base):
     __tablename__ = "external_cache"
 
     url_hash: Mapped[str] = mapped_column(
-        String(32), primary_key=True, comment="Blake2b hash of canonical URL"
+        String(HASH_LENGTH), primary_key=True, comment="Blake2b hash of canonical URL"
     )
     url: Mapped[str] = mapped_column(
-        Text, nullable=False, comment="Original external subscription URL"
+        String(URL_MAX_LENGTH), nullable=False, comment="Original external subscription URL"
     )
 
     # Cache content

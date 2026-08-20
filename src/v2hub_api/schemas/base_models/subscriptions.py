@@ -4,6 +4,13 @@ from typing import Annotated, Any
 from pydantic import ConfigDict, Field, computed_field, field_validator
 
 from v2hub_api.core.config import settings
+from v2hub_api.core.constants import (
+    PROVIDER_NAME_MAX_LENGTH,
+    PROVIDER_NAME_MIN_LENGTH,
+    SUBSCRIPTION_DESCRIPTION_MAX_LENGTH,
+    SUBSCRIPTION_NAME_MAX_LENGTH,
+    SUBSCRIPTION_TOKEN_LENGTH,
+)
 from v2hub_api.utils.config_parser import _normalize_sources
 
 from .base import BaseModelConfig
@@ -12,16 +19,33 @@ from .sources import SourceCreateRequest, SourceOut
 
 class SubscriptionBase(BaseModelConfig):
     token: Annotated[
-        str, Field(description="Unique subscription token", min_length=43, max_length=43)
+        str,
+        Field(
+            description="Unique subscription token",
+            min_length=SUBSCRIPTION_TOKEN_LENGTH,
+            max_length=SUBSCRIPTION_TOKEN_LENGTH,
+        ),
     ]
     name: Annotated[
-        str, Field(description="User-defined subscription name", min_length=1, max_length=64)
+        str,
+        Field(
+            description="User-defined subscription name", max_length=SUBSCRIPTION_NAME_MAX_LENGTH
+        ),
     ]
     provider_name: Annotated[
-        str | None, Field(None, description="Provider name", min_length=4, max_length=16)
+        str | None,
+        Field(
+            None,
+            description="Provider name",
+            min_length=PROVIDER_NAME_MIN_LENGTH,
+            max_length=PROVIDER_NAME_MAX_LENGTH,
+        ),
     ]
     description: Annotated[
-        str | None, Field(None, description="Optional description", max_length=64)
+        str | None,
+        Field(
+            None, description="Optional description", max_length=SUBSCRIPTION_DESCRIPTION_MAX_LENGTH
+        ),
     ]
     sources_count: Annotated[int, Field(description="Total resolved configs count", ge=0)]
     created_at: Annotated[datetime, Field(description="Creation timestamp")]
@@ -47,9 +71,14 @@ class SubscriptionListItem(SubscriptionBase):
 
 
 class SubscriptionCreateRequest(BaseModelConfig):
-    name: Annotated[str, Field(description="Subscription name", min_length=1, max_length=64)]
+    name: Annotated[
+        str, Field(description="Subscription name", max_length=SUBSCRIPTION_NAME_MAX_LENGTH)
+    ]
     description: Annotated[
-        str | None, Field(None, description="Optional description", max_length=64)
+        str | None,
+        Field(
+            None, description="Optional description", max_length=SUBSCRIPTION_DESCRIPTION_MAX_LENGTH
+        ),
     ]
     sources: Annotated[
         list[SourceCreateRequest],
@@ -84,10 +113,11 @@ class SubscriptionCreateRequest(BaseModelConfig):
 
 class SubscriptionUpdateRequest(BaseModelConfig):
     name: Annotated[
-        str | None, Field(None, description="New name", min_length=1, max_length=64)
+        str | None, Field(None, description="New name", max_length=SUBSCRIPTION_NAME_MAX_LENGTH)
     ] = None
     description: Annotated[
-        str | None, Field(None, description="New description", max_length=64)
+        str | None,
+        Field(None, description="New description", max_length=SUBSCRIPTION_DESCRIPTION_MAX_LENGTH),
     ] = None
 
     @field_validator("name")

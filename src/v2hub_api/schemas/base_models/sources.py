@@ -4,6 +4,7 @@ from typing import Annotated, Any
 from pydantic import AliasChoices, Field, field_validator
 
 from v2hub_api.core.config import settings
+from v2hub_api.core.constants import COMMENT_MAX_LENGTH, HASH_LENGTH
 from v2hub_api.core.enums import SourceType
 from v2hub_api.utils.config_parser import _clean_sources, _normalize_sources
 
@@ -21,7 +22,12 @@ class SourceOut(BaseModelConfig):
     """
 
     id: Annotated[
-        str, Field(description="Unique source identifier (hash)", min_length=32, max_length=32)
+        str,
+        Field(
+            description="Unique source identifier (hash)",
+            min_length=HASH_LENGTH,
+            max_length=HASH_LENGTH,
+        ),
     ]
     source_type: Annotated[SourceType, Field(description="Type of source")]
     data: Annotated[str, Field(description="Source data (config, URL, or token)", min_length=1)]
@@ -88,7 +94,7 @@ class SourcesReplaceRequest(BaseModelConfig):
 
 class SourcesRemoveRequest(BaseModelConfig):
     source_ids: Annotated[
-        list[Annotated[str, Field(min_length=32, max_length=32)]],
+        list[Annotated[str, Field(min_length=HASH_LENGTH, max_length=HASH_LENGTH)]],
         Field(..., min_length=1),
     ]
 
@@ -108,15 +114,15 @@ class SourceUpdateRequest(BaseModelConfig):
         str,
         Field(
             description="Config hash",
-            min_length=32,
-            max_length=32,
+            min_length=HASH_LENGTH,
+            max_length=HASH_LENGTH,
             validation_alias=AliasChoices("config_hash", "config_id"),
         ),
     ]
 
     comment: Annotated[
         str | None,
-        Field(None, description="Comment text", max_length=256),
+        Field(None, description="Comment text", max_length=COMMENT_MAX_LENGTH),
     ]
 
     is_hidden: Annotated[

@@ -8,6 +8,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from v2hub_api.core.constants import HASH_LENGTH
 from v2hub_api.db.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
@@ -30,7 +31,9 @@ class ProxyConfig(TimestampMixin, Base):
     __tablename__ = "proxy_configs"
 
     config_hash: Mapped[str] = mapped_column(
-        String(32), primary_key=True, comment="Blake2b hash of normalized config (without fragment)"
+        String(HASH_LENGTH),
+        primary_key=True,
+        comment="Blake2b hash of normalized config (without fragment)",
     )
     config_data: Mapped[str] = mapped_column(
         Text, nullable=False, comment="Proxy configuration URI without fragment"
