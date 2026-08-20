@@ -10,7 +10,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from v2hub_api.core.config import settings
+from v2hub_api.core.constants import API_TOKEN_BYTES
 from v2hub_api.core.exceptions import AuthenticationError, NotFoundError, ValidationError
 from v2hub_api.db.models import User
 from v2hub_api.db.repositories.user_repository import UserRepository
@@ -55,7 +55,7 @@ class UserService:
         Returns:
             URL-safe Base64-encoded token generated from random bytes.
         """
-        token = secrets.token_urlsafe(settings.api_token_length)
+        token = secrets.token_urlsafe(API_TOKEN_BYTES)
         return token
 
     async def create_user(self, user_id: int) -> User:

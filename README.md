@@ -405,7 +405,6 @@ REDIS_TTL=600
 # ─────────────────────────────
 SECRET_KEY=STRONG_PASSWORD
 ADMIN_SECRET_KEY=STRONG_PASSWORD
-API_TOKEN_LENGTH=32
 
 ADMIN_ALLOWED_IPS=["127.0.0.1"]
 
@@ -450,8 +449,7 @@ LOG_FORMAT=%(asctime)s - %(name)s - %(levelname)s - %(message)s
 | **Performance** | `DB_POOL_SIZE`                 | 10      | Database connection pool size                       |
 |                 | `REDIS_TTL`                    | 600     | Cache TTL in seconds                                |
 |                 | `FETCH_TIMEOUT`                | 3       | HTTP fetch timeout (seconds)                        |
-| **Security**    | `API_TOKEN_LENGTH`             | 16      | Length of generated tokens                          |
-|                 | `ADMIN_ALLOWED_IPS`            | -       | Comma-separated IP whitelist                        |
+| **Security**    | `ADMIN_ALLOWED_IPS`            | -       | Comma-separated IP whitelist                        |
 | **Rate Limits** | `PUBLIC_RPS`                   | 3       | Requests/second for public endpoints                |
 |                 | `INTERNAL_WITH_TOKEN_RPS`      | 3       | Requests/second for authenticated                   |
 |                 | `TRUSTED_NOLIMIT_IPS`          | -       | Comma-separated IPs exempt from nginx rate limiting |
