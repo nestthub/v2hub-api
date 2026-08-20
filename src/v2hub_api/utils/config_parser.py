@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from v2hub_api.core.config import settings
+from v2hub_api.core.constants import HASH_BYTES
 from v2hub_api.core.enums import ProxyProtocol
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -107,7 +108,7 @@ def get_config_hash(config: str) -> str:
         Hex-encoded hash (32 characters)
     """
     normalized = normalize_config(config)
-    return hashlib.blake2b(normalized.encode("utf-8"), digest_size=16).hexdigest()
+    return hashlib.blake2b(normalized.encode("utf-8"), digest_size=HASH_BYTES).hexdigest()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -143,7 +144,7 @@ def get_url_hash(url: str) -> str:
         Hex-encoded hash (32 characters)
     """
     normalized = url.strip()
-    return hashlib.blake2b(normalized.encode("utf-8"), digest_size=16).hexdigest()
+    return hashlib.blake2b(normalized.encode("utf-8"), digest_size=HASH_BYTES).hexdigest()
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -10,7 +10,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from v2hub_api.core.config import settings
+from v2hub_api.core.constants import API_TOKEN_BYTES
 from v2hub_api.core.exceptions import AuthenticationError, NotFoundError, ValidationError
 from v2hub_api.db.models import User
 from v2hub_api.db.repositories.user_repository import UserRepository
@@ -41,22 +41,21 @@ class UserService:
 
     def _generate_user_hash(self) -> str:
         """
-        Generate stable hash from user ID.
-
-        Args:
-            user_id: External user ID
+        Generate a unique identifier for a user.
 
         Returns:
-            User hash
+            A UUID4 string representation, 36 characters long.
         """
-        # Combine user_id with secret for uniqueness
         return str(uuid.uuid4())
 
     def _generate_api_token(self) -> str:
         """
-        Generate API token bound to user_id.
+        Generate a cryptographically secure API token.
+
+        Returns:
+            URL-safe Base64-encoded token generated from random bytes.
         """
-        token = secrets.token_urlsafe(settings.api_token_length)
+        token = secrets.token_urlsafe(API_TOKEN_BYTES)
         return token
 
     async def create_user(self, user_id: int) -> User:

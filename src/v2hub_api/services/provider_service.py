@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from v2hub_api.core.config import settings
+from v2hub_api.core.constants import API_TOKEN_BYTES
 from v2hub_api.core.exceptions import (
     AuthenticationError,
     DuplicateNameError,
@@ -63,7 +63,7 @@ class ProviderService:
         Returns:
             Generated API token
         """
-        return secrets.token_urlsafe(settings.api_token_length)
+        return secrets.token_urlsafe(API_TOKEN_BYTES)
 
     async def create_provider(
         self,

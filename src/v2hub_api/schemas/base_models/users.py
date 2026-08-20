@@ -2,6 +2,14 @@ from typing import Annotated
 
 from pydantic import Field
 
+from v2hub_api.core.constants import (
+    PROVIDER_NAME_MAX_LENGTH,
+    PROVIDER_NAME_MIN_LENGTH,
+    URL_MAX_LENGTH,
+    USER_ID_MAX,
+    USER_ID_MIN,
+)
+
 from .base import BaseModelConfig
 
 
@@ -17,7 +25,8 @@ class ConnectionResponse(BaseModelConfig):
         str,
         Field(
             description="Provider name",
-            min_length=1,
+            min_length=PROVIDER_NAME_MIN_LENGTH,
+            max_length=PROVIDER_NAME_MAX_LENGTH,
         ),
     ]
 
@@ -25,6 +34,7 @@ class ConnectionResponse(BaseModelConfig):
         str | None,
         Field(
             description="Provider API URL",
+            max_length=URL_MAX_LENGTH,
         ),
     ]
 
@@ -62,9 +72,7 @@ class MeResponse(BaseModelConfig):
 
     user_id: Annotated[
         int,
-        Field(
-            description="User identifier",
-        ),
+        Field(description="User identifier", ge=USER_ID_MIN, le=USER_ID_MAX),
     ]
 
     is_active: Annotated[

@@ -11,6 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from v2hub_api.core.constants import COMMENT_MAX_LENGTH, HASH_LENGTH, SUBSCRIPTION_TOKEN_LENGTH
 from v2hub_api.db.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
@@ -44,19 +45,21 @@ class ConfigComment(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     subscription_token: Mapped[str] = mapped_column(
-        String(255),
+        String(SUBSCRIPTION_TOKEN_LENGTH),
         ForeignKey("subscriptions.token", ondelete="CASCADE"),
         nullable=False,
         comment="Subscription this comment belongs to",
     )
     config_hash: Mapped[str] = mapped_column(
-        String(64),
+        String(HASH_LENGTH),
         ForeignKey("proxy_configs.config_hash", ondelete="CASCADE"),
         nullable=False,
         comment="Config this comment applies to",
     )
     comment: Mapped[str] = mapped_column(
-        String(255), nullable=False, comment="Comment text to append after # in config"
+        String(COMMENT_MAX_LENGTH),
+        nullable=False,
+        comment="Comment text to append after # in config",
     )
 
     # Relationships

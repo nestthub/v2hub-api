@@ -9,10 +9,10 @@ from sqlalchemy import (
     Integer,
     PrimaryKeyConstraint,
     String,
-    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from v2hub_api.core.constants import HASH_LENGTH, SUBSCRIPTION_TOKEN_LENGTH, URL_MAX_LENGTH
 from v2hub_api.db.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
@@ -42,21 +42,23 @@ class Source(TimestampMixin, Base):
     )
 
     subscription_token: Mapped[str] = mapped_column(
-        String(255),
+        String(SUBSCRIPTION_TOKEN_LENGTH),
         ForeignKey("subscriptions.token", ondelete="CASCADE"),
         nullable=False,
     )
 
     id: Mapped[str] = mapped_column(
-        String(64), nullable=False, comment="Unique identifier for this source within subscription"
+        String(HASH_LENGTH),
+        nullable=False,
+        comment="Unique identifier for this source within subscription",
     )
     source_type: Mapped[str] = mapped_column(
-        String(50), nullable=False, comment="Type: CONFIG, EXTERNAL_URL, or INTERNAL_TOKEN"
+        String(15), nullable=False, comment="Type: CONFIG, EXTERNAL_URL, or INTERNAL_TOKEN"
     )
 
     # For CONFIG type: references proxy_configs table
     config_hash: Mapped[str | None] = mapped_column(
-        String(64),
+        String(HASH_LENGTH),
         ForeignKey("proxy_configs.config_hash", ondelete="SET NULL"),
         nullable=True,
         comment="Reference to ProxyConfig (for CONFIG type)",
@@ -64,12 +66,12 @@ class Source(TimestampMixin, Base):
 
     # For INTERNAL_TOKEN types: stores the token
     internal_token: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, comment="Token for INTERNAL_TOKEN"
+        String(SUBSCRIPTION_TOKEN_LENGTH), nullable=True, comment="Token for INTERNAL_TOKEN"
     )
 
     # For EXTERNAL_URL types: stores the URL
     external_url: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="URL for EXTERNAL_URL"
+        String(URL_MAX_LENGTH), nullable=True, comment="URL for EXTERNAL_URL"
     )
 
     is_hidden: Mapped[bool] = mapped_column(

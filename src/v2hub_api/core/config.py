@@ -57,7 +57,6 @@ class Settings(BaseSettings):
     secret_key: str = Field(
         ..., validation_alias="SECRET_KEY", description="Secret key for token generation"
     )
-    api_token_length: int = Field(default=16, validation_alias="API_TOKEN_LENGTH")
 
     # Admin security configuration
     admin_secret_key: str = Field(

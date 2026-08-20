@@ -10,6 +10,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from v2hub_api.core.constants import (
+    API_TOKEN_LENGTH,
+    PROVIDER_NAME_MAX_LENGTH,
+    URL_MAX_LENGTH,
+    UUID_LENGTH,
+)
 from v2hub_api.db.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
@@ -24,13 +30,13 @@ class Provider(TimestampMixin, Base):
     __tablename__ = "providers"
 
     provider_hash: Mapped[str] = mapped_column(
-        String(255),
+        String(UUID_LENGTH),
         primary_key=True,
         comment="Unique public identifier of the provider",
     )
 
     owner_hash: Mapped[str] = mapped_column(
-        String(255),
+        String(UUID_LENGTH),
         ForeignKey("users.user_hash", ondelete="CASCADE"),
         unique=True,
         nullable=False,
@@ -38,11 +44,14 @@ class Provider(TimestampMixin, Base):
     )
 
     provider_name: Mapped[str] = mapped_column(
-        String(64), unique=True, nullable=False, comment="Unique provider name."
+        String(PROVIDER_NAME_MAX_LENGTH),
+        unique=True,
+        nullable=False,
+        comment="Unique provider name.",
     )
 
     api_token: Mapped[str] = mapped_column(
-        String(255),
+        String(API_TOKEN_LENGTH),
         unique=True,
         nullable=False,
         index=True,
@@ -50,7 +59,7 @@ class Provider(TimestampMixin, Base):
     )
 
     provider_url: Mapped[str | None] = mapped_column(
-        String(255),
+        String(URL_MAX_LENGTH),
         nullable=True,
         comment="Provider website or bot URL",
     )

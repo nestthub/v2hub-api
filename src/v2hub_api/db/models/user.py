@@ -10,6 +10,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from v2hub_api.core.constants import API_TOKEN_LENGTH, UUID_LENGTH
 from v2hub_api.db.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
@@ -31,7 +32,7 @@ class User(TimestampMixin, Base):
     __tablename__ = "users"
 
     user_hash: Mapped[str] = mapped_column(
-        String(255), primary_key=True, comment="Stable hash derived from external user ID"
+        String(UUID_LENGTH), primary_key=True, comment="Stable hash derived from external user ID"
     )
     user_id: Mapped[int] = mapped_column(
         BigInteger,
@@ -41,7 +42,11 @@ class User(TimestampMixin, Base):
         comment="Original user ID from external system",
     )
     api_token: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False, index=True, comment="API authentication token"
+        String(API_TOKEN_LENGTH),
+        unique=True,
+        nullable=False,
+        index=True,
+        comment="API authentication token",
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("TRUE"), comment="Whether user account is active"

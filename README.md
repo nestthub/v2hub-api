@@ -405,7 +405,6 @@ REDIS_TTL=600
 # ─────────────────────────────
 SECRET_KEY=STRONG_PASSWORD
 ADMIN_SECRET_KEY=STRONG_PASSWORD
-API_TOKEN_LENGTH=32
 
 ADMIN_ALLOWED_IPS=["127.0.0.1"]
 
@@ -450,8 +449,7 @@ LOG_FORMAT=%(asctime)s - %(name)s - %(levelname)s - %(message)s
 | **Performance** | `DB_POOL_SIZE`                 | 10      | Database connection pool size                       |
 |                 | `REDIS_TTL`                    | 600     | Cache TTL in seconds                                |
 |                 | `FETCH_TIMEOUT`                | 3       | HTTP fetch timeout (seconds)                        |
-| **Security**    | `API_TOKEN_LENGTH`             | 16      | Length of generated tokens                          |
-|                 | `ADMIN_ALLOWED_IPS`            | -       | Comma-separated IP whitelist                        |
+| **Security**    | `ADMIN_ALLOWED_IPS`            | -       | Comma-separated IP whitelist                        |
 | **Rate Limits** | `PUBLIC_RPS`                   | 3       | Requests/second for public endpoints                |
 |                 | `INTERNAL_WITH_TOKEN_RPS`      | 3       | Requests/second for authenticated                   |
 |                 | `TRUSTED_NOLIMIT_IPS`          | -       | Comma-separated IPs exempt from nginx rate limiting |
@@ -487,7 +485,7 @@ python serve_docs.py
 - `PUT /api/v1/subs/{token}/sources` - Replace sources
 - `DELETE /api/v1/subs/{token}/sources` - Remove sources
 - `PATCH /api/v1/subs/{token}/config` - Update config (comment, `is_hidden`, `max_depth`)
-- `PATCH /api/v1/subs/{token}/comments` - Update config comment _(deprecated, use `/config` above)_
+- `PATCH /api/v1/subs/{token}/comments` - Update config comment _(deprecated, use `/config` above; request body field is `config_hash`, with `config_id` accepted as a legacy alias)_
 - `POST /api/v1/subs/{token}/refresh` - Refresh external sources
 
 #### Provider Endpoints (require a provider `API-Token`)
@@ -1048,7 +1046,21 @@ Required repository secrets for deployment: `HOST`, `PORT`, `USER`, `SSH_KEY`.
 - All inputs validated using Pydantic models
 - URL validation prevents SSRF attacks
 - Config parsing prevents injection attacks
-- Length limits on all text fields
+- Length limits on all text fields, matching the database column sizes exactly (see below)
+
+Field length constraints are centralized in `core/constants.py` and shared between Pydantic schemas and SQLAlchemy models, so validation and storage limits can never drift apart:
+
+| Field                                        | Length              | Notes                                                        |
+| -------------------------------------------- | ------------------- | ------------------------------------------------------------ |
+| `api_token` (user/provider)                  | 43 (fixed)          | Base64URL of 32 random bytes; no longer configurable via env |
+| `subscription_token`                         | 43 (fixed)          | Base64URL of 32 random bytes                                 |
+| `user_hash` / `provider_hash` / `owner_hash` | 36 (fixed)          | UUID4 string                                                 |
+| `config_hash` / `source_id` / `url_hash`     | 32 (fixed)          | Hex-encoded Blake2b digest (16 bytes)                        |
+| `provider_name`                              | 4–16                |                                                              |
+| `subscription_name` / `description`          | ≤ 64                |                                                              |
+| `comment`                                    | ≤ 255               |                                                              |
+| `url` (provider/source)                      | ≤ 255               |                                                              |
+| `user_id`                                    | 1 – 999,999,999,999 | Fits `BIGINT`                                                |
 
 ### Rate Limiting
 

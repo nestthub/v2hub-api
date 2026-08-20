@@ -143,7 +143,7 @@ class TestUniqueNamePerUser:
 class TestGenerateUniqueToken:
     async def test_generates_token_of_expected_length_class(self, db_session):
         repo = SubscriptionRepository(db_session)
-        token = await repo.generate_unique_token(length=16)
+        token = await repo.generate_unique_token()
         assert isinstance(token, str)
         assert len(token) > 0
 
