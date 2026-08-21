@@ -17,7 +17,12 @@ NOT covered here because not implemented yet (see issue checklist):
 
 import pytest
 
-from v2hub_api.core.exceptions import AuthenticationError, NotFoundError, ValidationError
+from v2hub_api.core.exceptions import (
+    AuthenticationError,
+    DuplicateNameError,
+    NotFoundError,
+    ValidationError,
+)
 from v2hub_api.services.provider_service import ProviderService
 from v2hub_api.services.user_service import UserService
 
@@ -193,6 +198,54 @@ class TestUpdateProviderUrl:
         service = ProviderService(db_session)
         with pytest.raises(NotFoundError):
             await service.update_provider_url("nonexistent-hash", "https://x.example")
+
+
+class TestUpdateProviderName:
+    async def test_updates_name(self, db_session):
+        owner = await _make_owner(db_session)
+        service = ProviderService(db_session)
+        created = await service.create_provider(owner_hash=owner.user_hash, provider_name="vpn123")
+
+        updated = await service.update_provider_name(created.provider_hash, "vpnnew")
+        assert updated.provider_name == "vpnnew"
+
+    async def test_is_idempotent_when_name_unchanged(self, db_session):
+        owner = await _make_owner(db_session)
+        service = ProviderService(db_session)
+        created = await service.create_provider(owner_hash=owner.user_hash, provider_name="vpn123")
+
+        updated = await service.update_provider_name(created.provider_hash, "vpn123")
+        assert updated.provider_name == "vpn123"
+        assert updated.provider_hash == created.provider_hash
+
+    async def test_raises_not_found_when_missing(self, db_session):
+        service = ProviderService(db_session)
+        with pytest.raises(NotFoundError):
+            await service.update_provider_name("nonexistent-hash", "vpnnew")
+
+    async def test_raises_duplicate_name_error_when_name_taken(self, db_session):
+        owner1 = await _make_owner(db_session, user_id=1)
+        owner2 = await _make_owner(db_session, user_id=2)
+        service = ProviderService(db_session)
+        await service.create_provider(owner_hash=owner1.user_hash, provider_name="taken")
+        created2 = await service.create_provider(owner_hash=owner2.user_hash, provider_name="vpn2")
+
+        with pytest.raises(DuplicateNameError):
+            await service.update_provider_name(created2.provider_hash, "taken")
+
+    async def test_does_not_rename_when_duplicate_check_fails(self, db_session):
+        """A rejected rename must not partially apply."""
+        owner1 = await _make_owner(db_session, user_id=1)
+        owner2 = await _make_owner(db_session, user_id=2)
+        service = ProviderService(db_session)
+        await service.create_provider(owner_hash=owner1.user_hash, provider_name="taken")
+        created2 = await service.create_provider(owner_hash=owner2.user_hash, provider_name="vpn2")
+
+        with pytest.raises(DuplicateNameError):
+            await service.update_provider_name(created2.provider_hash, "taken")
+
+        unchanged = await service.get_provider(created2.provider_hash)
+        assert unchanged.provider_name == "vpn2"
 
 
 class TestDeleteProvider:
