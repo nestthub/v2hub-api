@@ -28,9 +28,13 @@ from v2hub_api.core.constants import (
     PROVIDER_NAME_MAX_LENGTH,
     PROVIDER_NAME_MIN_LENGTH,
     SUBSCRIPTION_NAME_MAX_LENGTH,
+    URL_MAX_LENGTH,
     UUID_LENGTH,
 )
-from v2hub_api.schemas.admin_models.providers import ProviderNameUpdateRequest
+from v2hub_api.schemas.admin_models.providers import (
+    ProviderCreateRequest,
+    ProviderNameUpdateRequest,
+)
 from v2hub_api.schemas.base_models.models import UpsertUserRequest
 from v2hub_api.schemas.base_models.sources import SourceUpdateRequest
 from v2hub_api.schemas.base_models.subscriptions import SubscriptionCreateRequest
@@ -158,3 +162,137 @@ class TestSubscriptionCreateRequestLimits:
     def test_strips_surrounding_whitespace(self):
         req = SubscriptionCreateRequest(name="  My Sub  ")
         assert req.name == "My Sub"
+
+
+class TestProviderNameFormat:
+    def test_accepts_lowercase_letters(self):
+        req = ProviderNameUpdateRequest(provider_name="abcd")
+        assert req.provider_name == "abcd"
+
+    def test_accepts_digits(self):
+        req = ProviderNameUpdateRequest(provider_name="1234")
+        assert req.provider_name == "1234"
+
+    def test_accepts_hyphens_between_parts(self):
+        req = ProviderNameUpdateRequest(provider_name="my-provider-2")
+        assert req.provider_name == "my-provider-2"
+
+    def test_rejects_uppercase_letters(self):
+        with pytest.raises(ValidationError):
+            ProviderNameUpdateRequest(provider_name="MyProvider")
+
+    def test_rejects_underscore(self):
+        with pytest.raises(ValidationError):
+            ProviderNameUpdateRequest(provider_name="my_provider")
+
+    def test_rejects_dot(self):
+        with pytest.raises(ValidationError):
+            ProviderNameUpdateRequest(provider_name="my.provider")
+
+    def test_rejects_space(self):
+        with pytest.raises(ValidationError):
+            ProviderNameUpdateRequest(provider_name="my provider")
+
+    def test_rejects_leading_hyphen(self):
+        with pytest.raises(ValidationError):
+            ProviderNameUpdateRequest(provider_name="-my-provider")
+
+    def test_rejects_trailing_hyphen(self):
+        with pytest.raises(ValidationError):
+            ProviderNameUpdateRequest(provider_name="my-provider-")
+
+    def test_rejects_consecutive_hyphens(self):
+        with pytest.raises(ValidationError):
+            ProviderNameUpdateRequest(provider_name="my--provider")
+
+
+class TestProviderCreateRequestProviderName:
+    def test_rejects_invalid_provider_name(self):
+        with pytest.raises(ValidationError):
+            ProviderCreateRequest(
+                owner_hash="00000000-0000-4000-8000-000000000000",
+                provider_name="my_provider",
+                provider_url=None,
+            )
+
+
+class TestProviderURLValidation:
+    def test_accepts_none(self):
+        req = ProviderCreateRequest(
+            owner_hash="00000000-0000-4000-8000-000000000000",
+            provider_name="vpn123",
+            provider_url=None,
+        )
+        assert req.provider_url is None
+
+    def test_accepts_https_url(self):
+        req = ProviderCreateRequest(
+            owner_hash="00000000-0000-4000-8000-000000000000",
+            provider_name="vpn123",
+            provider_url="https://example.com",
+        )
+        assert req.provider_url == "https://example.com"
+
+    def test_accepts_http_url(self):
+        req = ProviderCreateRequest(
+            owner_hash="00000000-0000-4000-8000-000000000000",
+            provider_name="vpn123",
+            provider_url="http://example.com",
+        )
+        assert req.provider_url == "http://example.com"
+
+    def test_rejects_non_http_scheme(self):
+        with pytest.raises(ValidationError):
+            ProviderCreateRequest(
+                owner_hash="00000000-0000-4000-8000-000000000000",
+                provider_name="vpn123",
+                provider_url="ftp://example.com",
+            )
+
+    def test_rejects_localhost(self):
+        with pytest.raises(ValidationError):
+            ProviderCreateRequest(
+                owner_hash="00000000-0000-4000-8000-000000000000",
+                provider_name="vpn123",
+                provider_url="http://localhost:8080",
+            )
+
+    def test_rejects_loopback_ip(self):
+        with pytest.raises(ValidationError):
+            ProviderCreateRequest(
+                owner_hash="00000000-0000-4000-8000-000000000000",
+                provider_name="vpn123",
+                provider_url="http://127.0.0.1:8080",
+            )
+
+    def test_rejects_private_ip(self):
+        with pytest.raises(ValidationError):
+            ProviderCreateRequest(
+                owner_hash="00000000-0000-4000-8000-000000000000",
+                provider_name="vpn123",
+                provider_url="http://192.168.1.1",
+            )
+
+    def test_rejects_link_local_ip(self):
+        with pytest.raises(ValidationError):
+            ProviderCreateRequest(
+                owner_hash="00000000-0000-4000-8000-000000000000",
+                provider_name="vpn123",
+                provider_url="http://169.254.169.254",
+            )
+
+    def test_rejects_url_without_hostname(self):
+        with pytest.raises(ValidationError):
+            ProviderCreateRequest(
+                owner_hash="00000000-0000-4000-8000-000000000000",
+                provider_name="vpn123",
+                provider_url="https://",
+            )
+
+    def test_rejects_url_over_maximum_length(self):
+        with pytest.raises(ValidationError):
+            ProviderCreateRequest(
+                owner_hash="00000000-0000-4000-8000-000000000000",
+                provider_name="vpn123",
+                provider_url=f"https://example.com/{'a' * URL_MAX_LENGTH}",
+            )

@@ -115,7 +115,7 @@ def is_url_safe(url: str) -> bool:
     try:
         validate_external_url(url)
         return True
-    except Exception:
+    except InvalidURLError:
         return False
 
 

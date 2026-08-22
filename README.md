@@ -1050,17 +1050,17 @@ Required repository secrets for deployment: `HOST`, `PORT`, `USER`, `SSH_KEY`.
 
 Field length constraints are centralized in `core/constants.py` and shared between Pydantic schemas and SQLAlchemy models, so validation and storage limits can never drift apart:
 
-| Field                                        | Length              | Notes                                                        |
-| -------------------------------------------- | ------------------- | ------------------------------------------------------------ |
-| `api_token` (user/provider)                  | 43 (fixed)          | Base64URL of 32 random bytes; no longer configurable via env |
-| `subscription_token`                         | 43 (fixed)          | Base64URL of 32 random bytes                                 |
-| `user_hash` / `provider_hash` / `owner_hash` | 36 (fixed)          | UUID4 string                                                 |
-| `config_hash` / `source_id` / `url_hash`     | 32 (fixed)          | Hex-encoded Blake2b digest (16 bytes)                        |
-| `provider_name`                              | 4–16                |                                                              |
-| `subscription_name` / `description`          | ≤ 64                |                                                              |
-| `comment`                                    | ≤ 255               |                                                              |
-| `url` (provider/source)                      | ≤ 255               |                                                              |
-| `user_id`                                    | 1 – 999,999,999,999 | Fits `BIGINT`                                                |
+| Field                                        | Length              | Notes                                                                                |
+| -------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------ |
+| `api_token` (user/provider)                  | 43 (fixed)          | Base64URL of 32 random bytes; no longer configurable via env                         |
+| `subscription_token`                         | 43 (fixed)          | Base64URL of 32 random bytes                                                         |
+| `user_hash` / `provider_hash` / `owner_hash` | 36 (fixed)          | UUID4 string                                                                         |
+| `config_hash` / `source_id` / `url_hash`     | 32 (fixed)          | Hex-encoded Blake2b digest (16 bytes)                                                |
+| `provider_name`                              | 4–16                | Lowercase `a-z`, digits `0-9`, and `-`; no leading, trailing, or consecutive hyphens |
+| `subscription_name` / `description`          | ≤ 64                |                                                                                      |
+| `comment`                                    | ≤ 255               |                                                                                      |
+| `url` (provider/source)                      | ≤ 255               |                                                                                      |
+| `user_id`                                    | 1 – 999,999,999,999 | Fits `BIGINT`                                                                        |
 
 ### Rate Limiting
 

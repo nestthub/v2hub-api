@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from v2hub_api.core.constants import (
     API_TOKEN_LENGTH,
@@ -9,6 +9,8 @@ from v2hub_api.core.constants import (
     URL_MAX_LENGTH,
     UUID_LENGTH,
 )
+from v2hub_api.core.exceptions import InvalidURLError
+from v2hub_api.utils.url_validator import validate_external_url
 
 from .base import AdminBaseModel
 
@@ -24,10 +26,24 @@ class ProviderCreateRequest(AdminBaseModel):
         description="Provider name",
         min_length=PROVIDER_NAME_MIN_LENGTH,
         max_length=PROVIDER_NAME_MAX_LENGTH,
+        pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
     )
     provider_url: str | None = Field(
         None, description="Provider address url", max_length=URL_MAX_LENGTH
     )
+
+    @field_validator("provider_url")
+    @classmethod
+    def validate_provider_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        try:
+            validate_external_url(value)
+        except InvalidURLError as exc:
+            raise ValueError(str(exc)) from exc
+
+        return value
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -114,12 +130,27 @@ class ProviderURLUpdateRequest(AdminBaseModel):
 
     provider_url: str | None = Field(max_length=URL_MAX_LENGTH)
 
+    @field_validator("provider_url")
+    @classmethod
+    def validate_provider_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        try:
+            validate_external_url(value)
+        except InvalidURLError as exc:
+            raise ValueError(str(exc)) from exc
+
+        return value
+
 
 class ProviderNameUpdateRequest(AdminBaseModel):
     """Request model for updating provider name."""
 
     provider_name: str = Field(
-        min_length=PROVIDER_NAME_MIN_LENGTH, max_length=PROVIDER_NAME_MAX_LENGTH
+        min_length=PROVIDER_NAME_MIN_LENGTH,
+        max_length=PROVIDER_NAME_MAX_LENGTH,
+        pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
     )
 
 

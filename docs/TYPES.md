@@ -1060,11 +1060,11 @@ class ProviderCreateRequest(AdminBaseModel):
 
 **Fields**:
 
-| Field           | Type           | Required | Description                           |
-| --------------- | -------------- | -------- | ------------------------------------- |
-| `owner_hash`    | `string`       | Yes      | Hash identifying the provider's owner |
-| `provider_name` | `string`       | Yes      | Provider display name                 |
-| `provider_url`  | `string\|null` | No       | Provider URL (e.g. bot link)          |
+| Field           | Type           | Required | Description                                                                                                                                     |
+| --------------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `owner_hash`    | `string`       | Yes      | Hash identifying the provider's owner                                                                                                           |
+| `provider_name` | `string`       | Yes      | Provider display name. 4–16 characters; lowercase a-z, digits 0-9, and - only. Hyphens cannot be leading, trailing, or consecutive.             |
+| `provider_url`  | `string\|null` | No       | Provider URL (e.g. bot link) . Provider URLs must use a safe HTTP(S) URL without localhost, private, link-local, or other restricted addresses. |
 
 **Example**:
 
@@ -1185,15 +1185,15 @@ class ProviderURLUpdateRequest(AdminBaseModel):
 
 **Fields**:
 
-| Field          | Type           | Required | Description      |
-| -------------- | -------------- | -------- | ---------------- |
-| `provider_url` | `string\|null` | Yes      | New provider URL |
+| Field          | Type           | Required | Description                                                                                                                        |
+| -------------- | -------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `provider_url` | `string\|null` | Yes      | New provider URL. Provider URLs must use a safe HTTP(S) URL without localhost, private, link-local, or other restricted addresses. |
 
 ---
 
 ### ProviderNameUpdateRequest
 
-Request to update a provider's display name.
+Request to update a provider's name.
 
 ```python
 class ProviderNameUpdateRequest(AdminBaseModel):
@@ -1202,9 +1202,9 @@ class ProviderNameUpdateRequest(AdminBaseModel):
 
 **Fields**:
 
-| Field           | Type     | Required | Description       |
-| --------------- | -------- | -------- | ----------------- |
-| `provider_name` | `string` | Yes      | New provider name |
+| Field           | Type     | Required | Description                                                                                                                           |
+| --------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider_name` | `string` | Yes      | New provider name. 4–16 characters; lowercase `a-z`, digits `0-9`, and `-` only. Hyphens cannot be leading, trailing, or consecutive. |
 
 ---
 
