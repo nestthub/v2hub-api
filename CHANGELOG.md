@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Branch `issue/5-database-limits`: unify database column lengths and schema validation limits under a single source of truth.
-
 ### Added
 
 - Centralized `core/constants.py` module defining hash, token, and text-field lengths, shared by both SQLAlchemy models and Pydantic schemas.
