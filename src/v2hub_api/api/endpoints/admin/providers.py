@@ -31,10 +31,12 @@ from v2hub_api.schemas.admin_models import (
 from v2hub_api.schemas.admin_models.providers import ProviderNameUpdateRequest
 
 from .dependencies import AdminSecurityDep, InternalIPDep
+from .provider_authorization import router as auth_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/providers")
+router.include_router(auth_router)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

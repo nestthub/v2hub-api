@@ -9,7 +9,7 @@ routes, and listing.
 import pytest
 
 from v2hub_api.core.enums import ProviderAuthorizationStatus
-from v2hub_api.core.exceptions import AuthorizationError, NotFoundError
+from v2hub_api.core.exceptions import AuthorizationError, NotFoundError, TooManyProvidersError
 from v2hub_api.services.provider_authorization_service import ProviderAuthorizationService
 from v2hub_api.services.provider_service import ProviderService
 from v2hub_api.services.subscription_service import SubscriptionService
@@ -63,14 +63,6 @@ class TestGrant:
         re_granted = await service.grant(provider.provider_hash, user.user_hash)
         assert re_granted.status == ProviderAuthorizationStatus.APPROVED
 
-    @pytest.mark.xfail(
-        reason=(
-            "Issue #4 checklist item not implemented: 'Default authorization "
-            "limit: 5 active providers per user' -- grant() never checks "
-            "get_user_providers_count before approving a 6th provider."
-        ),
-        strict=True,
-    )
     async def test_rejects_sixth_active_authorization_for_same_user(self, db_session):
         user = await _make_user(db_session, 100)
         service = ProviderAuthorizationService(db_session)
@@ -81,7 +73,7 @@ class TestGrant:
 
         sixth_provider = await _make_provider(db_session, owner_user_id=6, name="vpn6")
 
-        with pytest.raises(Exception):  # noqa: B017 -- any rejection is acceptable here
+        with pytest.raises(TooManyProvidersError):
             await service.grant(sixth_provider.provider_hash, user.user_hash)
 
 

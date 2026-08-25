@@ -141,17 +141,6 @@ class ProviderAuthorizationRepository(BaseRepository[ProviderAuthorization]):
         result = await self.session.execute(stmt)
         return cast("list[ProviderAuthorization]", result.scalars().all())
 
-    async def create_authorization(
-        self,
-        provider_hash: str,
-        user_hash: str,
-    ) -> ProviderAuthorization:
-        """Create new authorization (defaults to APPROVED via model default)."""
-        return await self.create(
-            provider_hash=provider_hash,
-            user_hash=user_hash,
-        )
-
     async def set_status(
         self,
         authorization: ProviderAuthorization,

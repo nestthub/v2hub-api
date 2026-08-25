@@ -53,3 +53,6 @@ SUBSCRIPTION_NAME_MAX_LENGTH = 64
 
 # Maximum subscription description length; must not exceed the DB column size.
 SUBSCRIPTION_DESCRIPTION_MAX_LENGTH = 64
+
+# Truncated HMAC length used in authorization links
+AUTH_HMAC_LENGTH = 24

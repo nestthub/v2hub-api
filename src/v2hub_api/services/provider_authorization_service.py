@@ -11,8 +11,9 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from v2hub_api.core.config import settings
 from v2hub_api.core.enums import ProviderAuthorizationStatus
-from v2hub_api.core.exceptions import AuthorizationError, NotFoundError
+from v2hub_api.core.exceptions import AuthorizationError, NotFoundError, TooManyProvidersError
 from v2hub_api.db.models import ProviderAuthorization
 from v2hub_api.db.repositories.provider_authorization_repository import (
     ProviderAuthorizationRepository,
@@ -80,6 +81,27 @@ class ProviderAuthorizationService:
             user_hash,
         )
 
+    async def reinitialize_authorization(
+        self,
+        authorization: ProviderAuthorization,
+    ) -> ProviderAuthorization:
+        """
+        Reinitialize a provider authorization request.
+
+        Sets the authorization status back to PENDING.
+
+        Returns:
+            Updated provider authorization.
+        """
+        authorization = await self.authorization_repo.update(
+            authorization,
+            status=ProviderAuthorizationStatus.PENDING,
+        )
+
+        await self.session.commit()
+
+        return authorization
+
     async def grant(
         self,
         provider_hash: str,
@@ -89,6 +111,12 @@ class ProviderAuthorizationService:
         Grant (or re-approve) provider access to a user.
         """
         authorization = await self.authorization_repo.get_by_hash((provider_hash, user_hash))
+
+        if not authorization or authorization.status != ProviderAuthorizationStatus.APPROVED:
+            user_providers = await self.authorization_repo.get_approved_provider_hashes(user_hash)
+
+            if len(user_providers) >= settings.max_providers_per_user:
+                raise TooManyProvidersError(len(user_providers), settings.max_providers_per_user)
 
         if authorization:
             if authorization.status != ProviderAuthorizationStatus.APPROVED:
@@ -106,9 +134,10 @@ class ProviderAuthorizationService:
 
             return authorization
 
-        authorization = await self.authorization_repo.create_authorization(
+        authorization = await self.authorization_repo.create(
             provider_hash=provider_hash,
             user_hash=user_hash,
+            status=ProviderAuthorizationStatus.APPROVED,
         )
 
         await self.session.commit()

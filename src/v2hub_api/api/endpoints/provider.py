@@ -11,20 +11,20 @@ from v2hub_api.core.config import settings
 from v2hub_api.core.enums import ProviderAuthorizationStatus
 from v2hub_api.core.exceptions import (
     AuthenticationError,
-    TooManyApprovedUsersError,
     to_http_exception,
 )
 from v2hub_api.schemas.base_models import (
     ProviderConnectionDeleteResponse,
     ProviderConnectionResponse,
 )
+from v2hub_api.schemas.base_models.providers import ProviderConnectionCreateResponse
+from v2hub_api.utils.auth_hmac import generate_auth_hmac
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/providers",
     tags=["Provider"],
-    include_in_schema=False,
 )
 
 
@@ -59,7 +59,7 @@ async def get_user(
 
 @router.post(
     "/{user_id}",
-    response_model=ProviderConnectionResponse,
+    response_model=ProviderConnectionCreateResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create provider connection",
     description="Create authorization request between provider and user",
@@ -69,51 +69,52 @@ async def create_connection(
     provider: CurrentProvider,
     user_service: UserServiceDep,
     authorization_service: ProviderAuthorizationServiceDep,
-) -> ProviderConnectionResponse:
+) -> ProviderConnectionCreateResponse:
     try:
         user = await user_service.get_by_user_id(user_id)
 
         if not user:
-            # TEMPORARY IMPLEMENTATION:
-            # In the future this flow will be changed.
-            # Providers should only be able to create connections for users
-            # from trusted services. Otherwise, this endpoint may be abused
-            # for creating unnecessary user accounts or spam.
-            user = await user_service.create_user(user_id)
-
-        authorization = await authorization_service.get_authorization(
-            provider_hash=provider.provider_hash,
-            user_hash=user.user_hash,
-        )
-
-        if authorization is None or authorization.status != ProviderAuthorizationStatus.APPROVED:
-            approved_users_count = await authorization_service.get_approved_users_count(
-                provider_hash=provider.provider_hash
+            auth_hmac = generate_auth_hmac(
+                user_id,
+                provider.provider_hash,
+                settings.auth_hmac_secret,
             )
-            if approved_users_count >= settings.max_provider_users:
-                raise TooManyApprovedUsersError(approved_users_count, settings.max_provider_users)
+            payload = f"conn_{auth_hmac}_{provider.provider_name}"
+            connection_status = ProviderAuthorizationStatus.PENDING
 
-        if authorization is None:
-            authorization = await authorization_service.add_authorization(
+        else:
+            authorization = await authorization_service.get_authorization(
                 provider_hash=provider.provider_hash,
                 user_hash=user.user_hash,
             )
 
-        elif authorization.status != ProviderAuthorizationStatus.APPROVED:
-            # TEMPORARY IMPLEMENTATION:
-            # User confirmation is currently not required.
-            # In the next update this will be replaced with a proper
-            # user approval flow through the connection request process.
-            await authorization_service.grant(
-                provider_hash=provider.provider_hash,
-                user_hash=user.user_hash,
-            )
+            if authorization is None:
+                authorization = await authorization_service.add_authorization(
+                    provider_hash=provider.provider_hash,
+                    user_hash=user.user_hash,
+                )
 
-            authorization.status = ProviderAuthorizationStatus.APPROVED
+            elif authorization.status == ProviderAuthorizationStatus.APPROVED:
+                return ProviderConnectionCreateResponse(
+                    user_id=user_id,
+                    status=authorization.status,
+                    connection_link=None,
+                )
 
-        return ProviderConnectionResponse(
-            user_id=user.user_id,
-            status=authorization.status,
+            elif authorization.status == ProviderAuthorizationStatus.REVOKED:
+                authorization = await authorization_service.reinitialize_authorization(
+                    authorization=authorization,
+                )
+
+            payload = f"provider_{provider.provider_name}"
+            connection_status = authorization.status
+
+        connection_link = f"{settings.connection_link_prefix}{payload}"
+
+        return ProviderConnectionCreateResponse(
+            user_id=user_id,
+            status=connection_status,
+            connection_link=connection_link,
         )
 
     except Exception as e:

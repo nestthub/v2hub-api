@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # ═══ Domain ════════════════════════════════════════════════════════════
     domain: str = Field(default="127.0.0.1", validation_alias="DOMAIN")
 
+    # ═══ API_VERSION ════════════════════════════════════════════════════════════
+    api_version: str = Field(
+        default="v1",
+        validation_alias="API_VERSION",
+        description="Public API version",
+    )
+
     # ═══ Database ══════════════════════════════════════════════════════════
     database_url: PostgresDsn = Field(
         ..., validation_alias="DATABASE_URL", description="PostgreSQL connection URL"
@@ -68,6 +75,12 @@ class Settings(BaseSettings):
         default_factory=list,
         validation_alias="ADMIN_ALLOWED_IPS",
         description="List of IP addresses allowed to access admin endpoints",
+    )
+
+    auth_hmac_secret: str = Field(
+        default="v2hub-auth-hmac",
+        validation_alias="AUTH_HMAC_SECRET",
+        description="Secret key for authorization link HMAC generation and validation",
     )
 
     # Security headers configuration
@@ -158,10 +171,16 @@ class Settings(BaseSettings):
     )
 
     # ═══ PROVIDER ══════════════════════════════════════════════════════════════
-    max_provider_users: int = Field(
-        default=1000,
-        validation_alias="MAX_PROVIDER_USERS",
-        description="Maximum number of approved users per provider",
+    max_providers_per_user: int = Field(
+        default=5,
+        validation_alias="MAX_PROVIDERS_PER_USER",
+        description="Maximum number of approved providers per user",
+    )
+
+    connection_link_prefix: str = Field(
+        default="https://t.me/v2hubot?start=",
+        validation_alias="CONNECTION_LINK_PREFIX",
+        description="Prefix used to build provider connection links",
     )
 
     # ═══ CORS ══════════════════════════════════════════════════════════════

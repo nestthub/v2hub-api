@@ -744,7 +744,6 @@ Create (or re-approve) an authorization allowing the provider to manage the give
 - If the user doesn't exist, it is created as part of this call (temporary behavior — see caveat below)
 - If no authorization exists yet, one is created and immediately approved
 - If a `revoked` authorization already exists, it is re-approved
-- Each provider has a maximum number of approved users (`MAX_PROVIDER_USERS`, default 1000); exceeding it returns `422`
 
 > **Caveat**: User confirmation is currently not required before a connection is approved, and any provider can create a user account by calling this endpoint with an unused `user_id`. This is a temporary implementation — a proper user-facing consent flow (and restricting account creation to trusted callers) is planned for a future release.
 
@@ -1893,15 +1892,14 @@ print(f"IP banned until: {ban['banned_until']}")
 
 Default configuration limits (can be customized via environment variables):
 
-| Parameter                       | Default | Environment Variable           |
-| ------------------------------- | ------- | ------------------------------ |
-| Max subscriptions per user      | 3       | `MAX_SUBSCRIPTIONS_PER_USER`   |
-| Max sources per subscription    | 150     | `MAX_SOURCES_PER_SUBSCRIPTION` |
-| Max configs per subscription    | 150     | `MAX_CONFIGS_PER_SUBSCRIPTION` |
-| Max nesting depth               | 3       | `MAX_NESTING_DEPTH`            |
-| Fetch timeout                   | 3s      | `FETCH_TIMEOUT`                |
-| Redis TTL                       | 600s    | `REDIS_TTL`                    |
-| Max approved users per provider | 1000    | `MAX_PROVIDER_USERS`           |
+| Parameter                    | Default | Environment Variable           |
+| ---------------------------- | ------- | ------------------------------ |
+| Max subscriptions per user   | 3       | `MAX_SUBSCRIPTIONS_PER_USER`   |
+| Max sources per subscription | 150     | `MAX_SOURCES_PER_SUBSCRIPTION` |
+| Max configs per subscription | 150     | `MAX_CONFIGS_PER_SUBSCRIPTION` |
+| Max nesting depth            | 3       | `MAX_NESTING_DEPTH`            |
+| Fetch timeout                | 3s      | `FETCH_TIMEOUT`                |
+| Redis TTL                    | 600s    | `REDIS_TTL`                    |
 
 ---
 

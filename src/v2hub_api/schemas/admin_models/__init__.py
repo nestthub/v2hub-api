@@ -1,4 +1,9 @@
 from .base import AdminBaseModel
+from .provider_authorization import (
+    ProviderAuthorizationDecisionRequest,
+    ProviderAuthorizationInfoResponse,
+    ProviderAuthorizationRequest,
+)
 from .providers import (
     AllProvidersResponse,
     ProviderCreateRequest,
@@ -43,6 +48,9 @@ __all__ = [
     "IPBanStatusResponse",
     "IPUnbanRequest",
     "IPUnbanResponse",
+    "ProviderAuthorizationDecisionRequest",
+    "ProviderAuthorizationInfoResponse",
+    "ProviderAuthorizationRequest",
     "ProviderCreateRequest",
     "ProviderCreateResponse",
     "ProviderResponse",

@@ -9,11 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Provider connection authorization flow with pending, approval, and rejection states.
+- HMAC-signed provider connection invite links for securely authorizing new users.
+- Admin endpoints for retrieving, approving, and rejecting provider authorization requests.
+- Configurable limit of approved providers per user (`MAX_PROVIDERS_PER_USER`, default 5).
 - Centralized `core/constants.py` module defining hash, token, and text-field lengths, shared by both SQLAlchemy models and Pydantic schemas.
 - Alembic migration `0003_adjust_database_column_lengths`, aligning DB column sizes (`config_comments`, `external_cache`, `provider_authorizations`, etc.) with the actual data formats.
 
 ### Changed
 
+- Provider connection endpoint now returns a connection link for users who have not yet been authorized.
+- Revoked provider authorizations are reinitialized as pending when a new connection is requested.
+- Provider authorization limits are now enforced per user instead of per provider.
 - Added provider URL validation using the existing external URL safety checks. Provider URLs are limited to 255 characters and must use a safe HTTP(S) URL without localhost, private, link-local, or other restricted addresses.
 - Restricted `provider_name` to 4–16 characters using only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`); leading, trailing, and consecutive hyphens are not allowed.
 - Renamed the `config_id` field to `config_hash` in the comment/source-settings update request (the old name is still accepted as a legacy alias).
@@ -23,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- Removed the previous maximum approved users per provider limit (`MAX_PROVIDER_USERS`).
 - The `API_TOKEN_LENGTH` setting from `.env.example`, the README, and `Settings` — token length is no longer configurable.
 
 ### Docs
@@ -31,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Tests
 
+- Added coverage for the maximum approved providers per user, including rejection of a sixth provider.
 - Added `test_admin_security.py`: HTTP-level coverage for the admin HMAC request-signature dependency and the IP-allowlist dependency, including a regression test for the query-string signature fix (commit `57c7cb3`).
 - Added `test_me_endpoints.py`: HTTP-level coverage for the `/me` self-service router (current user info, connection listing/lookup/revocation).
 - Added `test_schema_field_limits.py`: Pydantic-level coverage for the new field-length limits, including the `config_id` → `config_hash` legacy alias.

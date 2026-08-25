@@ -234,13 +234,13 @@ class TooManySubscriptionsError(VPNSubscriptionError):
         )
 
 
-class TooManyApprovedUsersError(VPNSubscriptionError):
-    """Raised when a provider has too many approved users."""
+class TooManyProvidersError(VPNSubscriptionError):
+    """Raised when an approved providers has too many sources."""
 
     def __init__(self, count: int, max_count: int) -> None:
         super().__init__(
-            message=(f"Approved user count ({count}) exceeds maximum allowed ({max_count})"),
-            error_code=ErrorCode.TOO_MANY_APPROVED_USERS,
+            message=(f"Providers count ({count}) exceeds maximum allowed ({max_count})"),
+            error_code=ErrorCode.TOO_MANY_PROVIDERS,
             details={"count": count, "max_count": max_count},
         )
 
@@ -302,7 +302,7 @@ def to_http_exception(exc: Exception) -> HTTPException:
             TooManyConfigsError: status.HTTP_422_UNPROCESSABLE_CONTENT,
             TooManySourcesError: status.HTTP_422_UNPROCESSABLE_CONTENT,
             TooManySubscriptionsError: status.HTTP_422_UNPROCESSABLE_CONTENT,
-            TooManyApprovedUsersError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            TooManyProvidersError: status.HTTP_422_UNPROCESSABLE_CONTENT,
             ExternalFetchError: status.HTTP_400_BAD_REQUEST,
             CacheError: status.HTTP_500_INTERNAL_SERVER_ERROR,
             RateLimitError: status.HTTP_429_TOO_MANY_REQUESTS,
