@@ -5,6 +5,27 @@ Handles the consent relationship between a Provider and a User:
 - a user grants a provider access to manage their subscriptions
 - a user can revoke that access at any time
 - provider-facing routes verify authorization before acting on behalf of a user
+
+Authorization lifecycle
+------------------------
+An authorization row moves through three statuses (`ProviderAuthorizationStatus`):
+
+    PENDING  --grant()-->  APPROVED  --revoke()-->  REVOKED
+       ^                                                 |
+       └──────────── reinitialize_authorization() ───────┘
+
+- `add_authorization` creates a row, usually starting PENDING (an admin
+  or the user still has to confirm it).
+- `grant` moves a row to APPROVED (or creates one directly as APPROVED,
+  e.g. for provider-initiated connections). This is the only place the
+  `MAX_PROVIDERS_PER_USER` quota (see `settings.max_providers_per_user`)
+  is enforced -- a user cannot end up with more than that many providers
+  simultaneously APPROVED.
+- `revoke` moves an APPROVED row to REVOKED. It is idempotent: revoking
+  an already-revoked authorization is a no-op rather than an error.
+- `reinitialize_authorization` resets a REVOKED row back to PENDING so a
+  user can be re-invited without losing the original authorization
+  history (created_at, provider/user hashes) in a fresh row.
 """
 
 import logging
@@ -38,7 +59,18 @@ class ProviderAuthorizationService:
         status: ProviderAuthorizationStatus | None = None,
     ) -> ProviderAuthorization:
         """
-        Create a provider authorization.
+        Create a provider authorization row.
+
+        This does NOT enforce the `MAX_PROVIDERS_PER_USER` quota -- that
+        check only applies when a provider becomes APPROVED (see `grant`).
+        A PENDING row created here does not yet grant the provider any
+        access to the user's subscriptions.
+
+        Args:
+            provider_hash: Hash of the provider requesting authorization.
+            user_hash: Hash of the user being asked to authorize.
+            status: Initial status. Defaults to the model's column
+                default (PENDING) when omitted.
 
         Returns:
             Created provider authorization.
@@ -58,6 +90,18 @@ class ProviderAuthorizationService:
         provider_hash: str,
         user_hash: str,
     ) -> None:
+        """
+        Permanently remove a provider authorization and its subscriptions.
+
+        Unlike `revoke` (which keeps the row as a REVOKED audit record),
+        this hard-deletes the authorization row and any subscriptions the
+        provider created for the user. Used when there is nothing worth
+        keeping -- e.g. an admin rejects a connection request that never
+        produced any subscriptions.
+
+        Raises:
+            NotFoundError: If no authorization exists for this pair.
+        """
         authorization = await self.get_authorization(
             provider_hash,
             user_hash,
@@ -109,14 +153,40 @@ class ProviderAuthorizationService:
     ) -> ProviderAuthorization:
         """
         Grant (or re-approve) provider access to a user.
+
+        Three cases, in order:
+        1. No authorization row exists yet -> create one directly as
+           APPROVED (used for provider-initiated connections where no
+           separate PENDING step is needed).
+        2. A row exists but isn't APPROVED (PENDING or REVOKED) -> flip
+           it to APPROVED.
+        3. A row exists and is already APPROVED -> return it unchanged
+           (idempotent; no duplicate log entry, no quota check).
+
+        Cases 1 and 2 are gated by `settings.max_providers_per_user`: a
+        user cannot have more than that many providers simultaneously
+        APPROVED. The check is skipped for case 3 so that re-fetching an
+        already-approved authorization never fails due to the user's own
+        existing approval.
+
+        Raises:
+            TooManyProvidersError: If granting this authorization would
+                push the user's approved-provider count over the
+                configured maximum.
         """
         authorization = await self.authorization_repo.get_by_hash((provider_hash, user_hash))
 
         if not authorization or authorization.status != ProviderAuthorizationStatus.APPROVED:
-            user_providers = await self.authorization_repo.get_approved_provider_hashes(user_hash)
+            # Only enforce the quota when this call would *add* a new
+            # approved provider. Re-approving an authorization that is
+            # already APPROVED for this exact provider is a no-op below
+            # and must not be blocked by its own existing membership.
+            approved_count = await self.authorization_repo.get_user_approved_providers_count(
+                user_hash
+            )
 
-            if len(user_providers) >= settings.max_providers_per_user:
-                raise TooManyProvidersError(len(user_providers), settings.max_providers_per_user)
+            if approved_count >= settings.max_providers_per_user:
+                raise TooManyProvidersError(approved_count, settings.max_providers_per_user)
 
         if authorization:
             if authorization.status != ProviderAuthorizationStatus.APPROVED:

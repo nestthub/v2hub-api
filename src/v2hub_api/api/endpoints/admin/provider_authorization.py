@@ -110,13 +110,16 @@ async def process_provider_authorization_request(
     try:
         provider = await provider_service.get_by_name(request.provider_name)
 
+        if not provider:
+            # Checked before touching the user record: an unknown
+            # provider_name must not have the side effect of creating a
+            # user for a caller-supplied user_id.
+            raise NotFoundError("Provider not found")
+
         user = await user_service.get_by_user_id(request.user_id)
 
         if not user:
             user = await user_service.create_user(request.user_id)
-
-        if not provider:
-            raise NotFoundError("Provider not found")
 
         authorization = await authorization_service.get_authorization(
             provider_hash=provider.provider_hash,
