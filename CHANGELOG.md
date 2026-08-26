@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- User self-service endpoints for approving and rejecting pending provider connection requests (`POST /me/connections/{provider_name}/approve` and `/reject`).
+- `ConnectionResponse.status` exposing the current provider authorization status (`pending`, `approved`, or `revoked`) in the `/me/connections` API.
+- `invalid_authorization_status` application error for connection operations that require a specific authorization state.
 - Provider connection authorization flow with pending, approval, and rejection states.
 - HMAC-signed provider connection invite links for securely authorizing new users.
 - Admin endpoints for retrieving, approving, and rejecting provider authorization requests.
@@ -19,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `/me/connections` now returns both `PENDING` and `APPROVED` provider connections; revoked authorizations remain excluded.
+- Provider connection approval and rejection through the `/me` API now require the authorization to be in `PENDING` status. Repeated approval of an already `APPROVED` connection remains idempotent, while invalid authorization states return HTTP 409.
+- Rejecting a pending connection preserves the authorization as `REVOKED` when provider subscriptions already exist; otherwise the pending authorization is deleted.
 - Provider connection endpoint now returns a connection link for users who have not yet been authorized.
 - Revoked provider authorizations are reinitialized as pending when a new connection is requested.
 - Provider authorization limits are now enforced per user instead of per provider.
@@ -46,9 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Tests
 
+- Added `test_me_endpoints.py`: HTTP-level coverage for the `/me` self-service router, including current user info, pending/approved/revoked connection states, approval and rejection flows, invalid authorization states, revocation, and preservation of authorizations and subscriptions when rejecting a connection with existing subscriptions.
 - Added coverage for the maximum approved providers per user, including rejection of a sixth provider.
 - Added `test_admin_security.py`: HTTP-level coverage for the admin HMAC request-signature dependency and the IP-allowlist dependency, including a regression test for the query-string signature fix (commit `57c7cb3`).
-- Added `test_me_endpoints.py`: HTTP-level coverage for the `/me` self-service router (current user info, connection listing/lookup/revocation).
 - Added `test_schema_field_limits.py`: Pydantic-level coverage for the new field-length limits, including the `config_id` → `config_hash` legacy alias.
 - Added `test_length_consistency.py`: cross-layer consistency checks tying together token/hash generators, `core/constants.py`, Pydantic schemas, SQLAlchemy column metadata, and real database round-trips — including an explicit test documenting that the SQLite test backend does not enforce `VARCHAR(n)` length the way production PostgreSQL does.
 - Extended `test_provider_service.py` with coverage for `ProviderService.update_provider_name` (rename, idempotency, not-found, duplicate-name, and no-partial-apply-on-conflict cases).
