@@ -9,7 +9,7 @@ routes, and listing.
 import pytest
 
 from v2hub_api.core.enums import ProviderAuthorizationStatus
-from v2hub_api.core.exceptions import AuthorizationError, NotFoundError
+from v2hub_api.core.exceptions import AuthorizationError, NotFoundError, TooManyProvidersError
 from v2hub_api.services.provider_authorization_service import ProviderAuthorizationService
 from v2hub_api.services.provider_service import ProviderService
 from v2hub_api.services.subscription_service import SubscriptionService
@@ -27,6 +27,41 @@ async def _make_provider(db_session, owner_user_id: int, name: str):
     return await ProviderService(db_session).create_provider(
         owner_hash=owner.user_hash, provider_name=name
     )
+
+
+class TestAddAuthorizationDefaultStatus:
+    """
+    Regression coverage for migration 0004: a `provider_authorizations`
+    row created without an explicit `status` must default to PENDING at
+    the schema level, not APPROVED. Prior to that migration the column
+    default was APPROVED, which meant creating a row via
+    `add_authorization(..., status=None)` silently granted full access
+    with no confirmation step.
+    """
+
+    async def test_add_authorization_without_status_defaults_to_pending(self, db_session):
+        provider = await _make_provider(db_session, owner_user_id=1, name="vpn1")
+        user = await _make_user(db_session, user_id=100)
+        service = ProviderAuthorizationService(db_session)
+
+        authorization = await service.add_authorization(provider.provider_hash, user.user_hash)
+
+        assert authorization.status == ProviderAuthorizationStatus.PENDING
+
+    async def test_add_authorization_can_still_create_approved_explicitly(self, db_session):
+        """Flows that intentionally want an already-approved row (e.g.
+        certain admin paths) must still be able to opt in explicitly."""
+        provider = await _make_provider(db_session, owner_user_id=1, name="vpn1")
+        user = await _make_user(db_session, user_id=100)
+        service = ProviderAuthorizationService(db_session)
+
+        authorization = await service.add_authorization(
+            provider.provider_hash,
+            user.user_hash,
+            status=ProviderAuthorizationStatus.APPROVED,
+        )
+
+        assert authorization.status == ProviderAuthorizationStatus.APPROVED
 
 
 class TestGrant:
@@ -63,14 +98,6 @@ class TestGrant:
         re_granted = await service.grant(provider.provider_hash, user.user_hash)
         assert re_granted.status == ProviderAuthorizationStatus.APPROVED
 
-    @pytest.mark.xfail(
-        reason=(
-            "Issue #4 checklist item not implemented: 'Default authorization "
-            "limit: 5 active providers per user' -- grant() never checks "
-            "get_user_providers_count before approving a 6th provider."
-        ),
-        strict=True,
-    )
     async def test_rejects_sixth_active_authorization_for_same_user(self, db_session):
         user = await _make_user(db_session, 100)
         service = ProviderAuthorizationService(db_session)
@@ -81,7 +108,7 @@ class TestGrant:
 
         sixth_provider = await _make_provider(db_session, owner_user_id=6, name="vpn6")
 
-        with pytest.raises(Exception):  # noqa: B017 -- any rejection is acceptable here
+        with pytest.raises(TooManyProvidersError):
             await service.grant(sixth_provider.provider_hash, user.user_hash)
 
 

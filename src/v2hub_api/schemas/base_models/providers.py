@@ -32,6 +32,12 @@ class ProviderConnectionResponse(BaseModelConfig):
     )
 
 
+class ProviderConnectionCreateResponse(ProviderConnectionResponse):
+    connection_link: str | None = Field(
+        description="Provider connection link",
+    )
+
+
 class ProviderConnectionDeleteResponse(BaseModelConfig):
     detail: str = Field(
         description="Operation result",

@@ -8,6 +8,7 @@
 - [API Endpoints](#api-endpoints)
   - [Public Endpoints](#public-endpoints)
   - [Subscription Management](#subscription-management)
+  - [User Self-Service API](#user-self-service-api)
   - [Provider API](#provider-api)
   - [Admin Endpoints](#admin-endpoints)
 - [Data Models](#data-models)
@@ -28,7 +29,7 @@ The VPN Subscription API provides a comprehensive solution for managing and aggr
 - **Circular reference detection**: Prevents infinite loops in subscription chains
 - **Rate limiting**: Configurable limits for different endpoint types
 - **Security**: HMAC-SHA256 signature verification for admin endpoints
-- **Provider integrations**: External services can request user consent to manage subscriptions on a user's behalf, subject to per-provider approved-user limits
+- **Provider integrations**: External services can request user consent to manage subscriptions on a user's behalf via an explicit pending → approved authorization flow (see [Provider API](#provider-api)), subject to a per-user limit on how many providers can be simultaneously authorized (`MAX_PROVIDERS_PER_USER`, default 5)
 
 **Base URL**: `https://your-domain.com`
 
@@ -66,7 +67,7 @@ API-Token: {provider_api_token}
 API-Token: a1B2c3D4e5F6g7H8i9J0
 ```
 
-The provider (and its `provider_hash`) is looked up from this token alone. A provider must additionally hold an **approved authorization** for the target `user_id` before it can manage that user's subscriptions (`/api/v1/providers/{user_id}/subs/...`). Authorization is established via `POST /api/v1/providers/{user_id}` and can be revoked at any time — see [Provider API](#provider-api).
+The provider (and its `provider_hash`) is looked up from this token alone. A provider must additionally hold an **approved** authorization for the target `user_id` before it can manage that user's subscriptions (`/api/v1/providers/{user_id}/subs/...`). A connection request starts out `pending` via `POST /api/v1/providers/{user_id}` and needs a separate confirmation step to become `approved`; it can be revoked at any time thereafter — see [Provider API](#provider-api).
 
 ### Admin Authentication
 
@@ -675,6 +676,190 @@ Manually refresh all external URL sources in a subscription.
 
 ---
 
+### User Self-Service API
+
+Endpoints for the currently authenticated user to view their account, list and manage their provider connections, and act on connection requests. All endpoints require authentication via the `API-Token` header using a **user** token (see [User Authentication](#user-authentication)).
+
+**Base Path**: `/api/v1/me`
+
+#### Get Current User
+
+Get information about the currently authenticated user.
+
+**Endpoint**: `GET /api/v1/me`
+
+**Response** (200 OK):
+
+```json
+{
+  "user_id": 12345,
+  "is_active": true
+}
+```
+
+**Response Schema**:
+
+| Field       | Type    | Description                        |
+| ----------- | ------- | ---------------------------------- |
+| `user_id`   | integer | User ID                            |
+| `is_active` | boolean | Whether the user account is active |
+
+---
+
+#### List Connections
+
+Get all providers currently authorized (`approved`) or awaiting confirmation (`pending`) to manage the user's subscriptions. Revoked authorizations are excluded.
+
+**Endpoint**: `GET /api/v1/me/connections`
+
+**Response** (200 OK):
+
+```json
+{
+  "connections": [
+    {
+      "provider_name": "vpn123",
+      "provider_url": "https://vpn123.example.com",
+      "is_authorized": true,
+      "status": "approved"
+    },
+    {
+      "provider_name": "vpn456",
+      "provider_url": "https://vpn456.example.com",
+      "is_authorized": true,
+      "status": "pending"
+    }
+  ]
+}
+```
+
+**Notes**:
+
+- `is_authorized` is always `true` for entries in this list — both `pending` and `approved` connections are included, but only entries the user has actually initiated or been offered are returned. Check `status` to distinguish a connection still awaiting confirmation (`pending`) from one already active (`approved`).
+
+---
+
+#### Get Provider Connection
+
+Get provider information and the current user's connection status for a specific provider. The provider is returned even when the user is not currently connected, so a client can display provider info and offer a connection action.
+
+**Endpoint**: `GET /api/v1/me/connections/{provider_name}`
+
+**Parameters**:
+
+- `provider_name` (path, required): Provider name
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "is_authorized": false,
+  "status": "pending"
+}
+```
+
+**Response Schema**:
+
+| Field           | Type           | Description                                                                |
+| --------------- | -------------- | -------------------------------------------------------------------------- |
+| `provider_name` | string         | Provider name                                                              |
+| `provider_url`  | string \| null | Provider URL                                                               |
+| `is_authorized` | boolean        | `true` only when `status` is `approved`                                    |
+| `status`        | string \| null | `pending`, `approved`, `revoked`, or `null` if no authorization exists yet |
+
+**Error Responses**:
+
+- `404 Not Found`: Provider not found
+
+---
+
+#### Approve Connection
+
+Confirm a `pending` connection request, granting the provider access to manage the user's subscriptions. This is the user-facing counterpart to a connection initiated via the [Provider API](#provider-api) (`POST /api/v1/providers/{user_id}`) or an admin-processed invite link.
+
+**Endpoint**: `POST /api/v1/me/connections/{provider_name}/approve`
+
+**Parameters**:
+
+- `provider_name` (path, required): Provider name
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "is_authorized": true,
+  "status": "approved"
+}
+```
+
+**Notes**:
+
+- If the authorization is already `approved`, the request succeeds and returns the current state unchanged (idempotent).
+- Subject to `MAX_PROVIDERS_PER_USER` (default 5): approving this connection can fail if the user is already at their limit of simultaneously approved providers.
+
+**Error Responses**:
+
+- `404 Not Found`: Provider not found, or no authorization exists for this provider
+- `409 Conflict`: Authorization exists but is neither `pending` nor `approved` (e.g. `revoked`) — cannot be approved directly; request a new connection instead
+- `422 Unprocessable Content`: User's authorized-providers limit reached (`too_many_providers`)
+
+---
+
+#### Reject Connection
+
+Reject a `pending` connection request.
+
+**Endpoint**: `POST /api/v1/me/connections/{provider_name}/reject`
+
+**Parameters**:
+
+- `provider_name` (path, required): Provider name
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "is_authorized": false,
+  "status": null
+}
+```
+
+**Notes**:
+
+- If the provider has already created subscriptions for this user, the authorization is **revoked** instead of deleted (audit trail preserved, avoids implicitly cascading those subscriptions) — `status` will be `"revoked"` in that case, not `null`.
+- If no subscriptions exist yet, the pending authorization is deleted outright and `status` is returned as `null`.
+
+**Error Responses**:
+
+- `404 Not Found`: Provider not found, or no authorization exists for this provider
+- `409 Conflict`: Authorization is not `pending` (already `approved` or `revoked`) — use [Revoke Provider Connection](#revoke-connection) to end an active connection instead
+
+---
+
+#### Revoke Connection
+
+Revoke the current user's authorization for a provider. The authorization record and the provider's existing subscriptions for this user are preserved (not deleted), so the user can reconnect later without losing them.
+
+**Endpoint**: `DELETE /api/v1/me/connections/{provider_name}`
+
+**Parameters**:
+
+- `provider_name` (path, required): Provider name
+
+**Response**: `204 No Content`
+
+**Error Responses**:
+
+- `404 Not Found`: Provider not found
+
+---
+
 ### Provider API
 
 Providers are external services (e.g. bots, resellers) that manage VPN subscriptions on behalf of a user. Using the Provider API involves two layers:
@@ -707,10 +892,10 @@ Get the current authorization status between the authenticated provider and a us
 
 **Response Schema**:
 
-| Field     | Type    | Description             |
-| --------- | ------- | ----------------------- |
-| `user_id` | integer | User ID                 |
-| `status`  | string  | `approved` or `revoked` |
+| Field     | Type    | Description                         |
+| --------- | ------- | ----------------------------------- |
+| `user_id` | integer | User ID                             |
+| `status`  | string  | `pending`, `approved`, or `revoked` |
 
 **Error Responses**:
 
@@ -722,7 +907,10 @@ Get the current authorization status between the authenticated provider and a us
 
 #### Create Provider Connection
 
-Create (or re-approve) an authorization allowing the provider to manage the given user's subscriptions. If the target `user_id` doesn't exist yet, a new user account is created automatically.
+Request (or resume) authorization allowing the provider to manage the given user's subscriptions. The response depends on whether `user_id` already has an account:
+
+- **Unknown `user_id`**: no user account exists yet, so nothing can be authorized server-side. The response's `connection_link` is instead an HMAC-signed invite payload (`conn_{hmac}_{provider_name}`) — the user is expected to open it (e.g. via a Telegram deep link) through a trusted flow that then calls the [Process Provider Connection Request](#process-provider-connection-request) admin endpoint, which verifies the HMAC and creates the account plus a `pending` authorization together.
+- **Known `user_id`**: an authorization row is created (or reused) directly, and `connection_link` is a plain `provider_{provider_name}` deep link.
 
 **Endpoint**: `POST /api/v1/providers/{user_id}`
 
@@ -735,23 +923,37 @@ Create (or re-approve) an authorization allowing the provider to manage the give
 ```json
 {
   "user_id": 12345,
-  "status": "approved"
+  "status": "pending",
+  "connection_link": "https://t.me/v2hubot?start=provider_vpn123"
 }
 ```
 
+**Response Schema**:
+
+| Field             | Type           | Description                                                                                                            |
+| ----------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `user_id`         | integer        | User ID                                                                                                                |
+| `status`          | string         | `pending`, `approved`, or `revoked`                                                                                    |
+| `connection_link` | string \| null | Link for the user to open to confirm the connection. `null` once already `approved` — there's nothing left to confirm. |
+
+**Behavior by case**:
+
+| Case                                     | Result                                                                                                                                                                 |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No account exists for `user_id`          | `status: "pending"`; `connection_link` is an HMAC-signed `conn_{hmac}_{provider_name}` invite. Neither a user nor an authorization row is created by this call itself. |
+| No authorization exists yet (known user) | A new `pending` authorization row is created; `connection_link` is a `provider_{provider_name}` deep link.                                                             |
+| Authorization is already `approved`      | Returned unchanged with `connection_link: null`.                                                                                                                       |
+| Authorization was previously `revoked`   | Reset back to `pending` on the same row (not a new one); `connection_link` returned as usual.                                                                          |
+
 **Notes**:
 
-- If the user doesn't exist, it is created as part of this call (temporary behavior — see caveat below)
-- If no authorization exists yet, one is created and immediately approved
-- If a `revoked` authorization already exists, it is re-approved
-- Each provider has a maximum number of approved users (`MAX_PROVIDER_USERS`, default 1000); exceeding it returns `422`
-
-> **Caveat**: User confirmation is currently not required before a connection is approved, and any provider can create a user account by calling this endpoint with an unused `user_id`. This is a temporary implementation — a proper user-facing consent flow (and restricting account creation to trusted callers) is planned for a future release.
+- A new authorization always starts `pending` and requires a separate confirmation step — the user calling [Approve Connection](#approve-connection), or an admin calling [Approve Provider Connection](#approve-provider-connection) — before the provider can act on the user's behalf. This endpoint never auto-approves a connection.
+- Repeated calls for the same `user_id` are idempotent: they reuse the existing authorization row rather than creating duplicates.
 
 **Error Responses**:
 
 - `401 Unauthorized`: Invalid or missing provider token
-- `422 Unprocessable Content`: Provider's approved-user limit reached
+- `422 Unprocessable Content`: User's authorized-providers limit reached (`MAX_PROVIDERS_PER_USER`, default 5). This is enforced when a connection is _approved_, not at this pending-request step — see [Approve Provider Connection](#approve-provider-connection).
 
 ---
 
@@ -1230,6 +1432,189 @@ Generate a new API token for a provider.
 
 ---
 
+#### Get Provider Authorization Status
+
+Look up the current authorization status between a provider and a user by name, for tooling that only has `provider_name`/`user_id` (e.g. an admin bot rendering a connection's state).
+
+**Endpoint**: `GET /api/v1/admin/providers/auth/{provider_name}/{user_id}`
+
+**Parameters**:
+
+- `provider_name` (path, required): Provider name
+- `user_id` (path, required): Target user ID
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "user_id": 12345,
+  "status": "pending"
+}
+```
+
+**Response Schema**:
+
+| Field           | Type           | Description                                                                |
+| --------------- | -------------- | -------------------------------------------------------------------------- |
+| `provider_name` | string         | Provider name                                                              |
+| `provider_url`  | string \| null | Provider URL                                                               |
+| `user_id`       | integer        | User ID                                                                    |
+| `status`        | string \| null | `pending`, `approved`, `revoked`, or `null` if no authorization exists yet |
+
+**Error Responses**:
+
+- `401 Unauthorized`: Invalid signature or timestamp
+- `403 Forbidden`: IP not in whitelist
+- `404 Not Found`: Provider or user not found
+
+---
+
+#### Process Provider Connection Request
+
+Finalize a provider connection invite. This is the endpoint a trusted internal flow (e.g. a Telegram bot handling a `conn_{hmac}_{provider_name}` deep link produced by [Create Provider Connection](#create-provider-connection)) calls once the target user has opened the link — it verifies the HMAC, creates the user account if it doesn't exist yet, and creates a `pending` authorization.
+
+**Endpoint**: `POST /api/v1/admin/providers/auth`
+
+**Request Body**:
+
+```json
+{
+  "user_id": 12345,
+  "provider_name": "vpn123",
+  "hmac": "3f9a1c7e0b4d2f6a8e1c9b3d"
+}
+```
+
+**Request Schema**:
+
+| Field           | Type           | Required | Description                                                             | Constraints                              |
+| --------------- | -------------- | -------- | ----------------------------------------------------------------------- | ---------------------------------------- |
+| `user_id`       | integer        | Yes      | Target user ID                                                          | 1–999999999999                           |
+| `provider_name` | string         | Yes      | Provider name                                                           | 4–16 chars, `^[a-z0-9]+(?:-[a-z0-9]+)*$` |
+| `hmac`          | string \| null | No       | HMAC from the invite link, required to create a _new_ authorization row | Exactly 24 hex characters                |
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "user_id": 12345,
+  "status": "pending"
+}
+```
+
+**Notes**:
+
+- If the provider doesn't exist, the request fails with `404 Not Found` _before_ any user account is created — an unknown `provider_name` never has the side effect of creating a user for the given `user_id`.
+- If the user doesn't exist yet, it's created here (this is the only place a provider-initiated flow can create a user account).
+- If an authorization already exists for this `(provider_name, user_id)` pair, it's returned as-is; `hmac` is not re-validated.
+- If no authorization exists and `hmac` is omitted, the endpoint reports `status: null` without creating anything — `hmac` is required to create a brand-new authorization, to prove the request corresponds to a link this API actually issued.
+- If no authorization exists and `hmac` is provided but invalid, the request fails with `401 Unauthorized`.
+
+**Error Responses**:
+
+- `401 Unauthorized`: Invalid signature/timestamp, or invalid/expired connection HMAC
+- `403 Forbidden`: IP not in whitelist
+- `404 Not Found`: Provider not found
+
+---
+
+#### Approve Provider Connection
+
+Approve a `pending` authorization, granting the provider access to manage the user's subscriptions.
+
+**Endpoint**: `POST /api/v1/admin/providers/auth/approve`
+
+**Request Body**:
+
+```json
+{
+  "user_id": 12345,
+  "provider_name": "vpn123"
+}
+```
+
+**Request Schema**:
+
+| Field           | Type    | Required | Description    | Constraints                              |
+| --------------- | ------- | -------- | -------------- | ---------------------------------------- |
+| `user_id`       | integer | Yes      | Target user ID | 1–999999999999                           |
+| `provider_name` | string  | Yes      | Provider name  | 4–16 chars, `^[a-z0-9]+(?:-[a-z0-9]+)*$` |
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "user_id": 12345,
+  "status": "approved"
+}
+```
+
+**Notes**:
+
+- If the authorization is already `approved` or `revoked` (i.e. not `pending`), it's returned unchanged and the quota below is not re-checked.
+- Approving is subject to `MAX_PROVIDERS_PER_USER` (default 5): if approving this authorization would put the user over their limit of simultaneously approved providers, the request fails instead of approving.
+
+**Error Responses**:
+
+- `401 Unauthorized`: Invalid signature or timestamp
+- `403 Forbidden`: IP not in whitelist
+- `404 Not Found`: Provider, user, or authorization not found
+- `422 Unprocessable Content`: User's authorized-providers limit reached (`too_many_providers`)
+
+---
+
+#### Reject Provider Connection
+
+Reject a pending (or previously approved) connection request.
+
+**Endpoint**: `POST /api/v1/admin/providers/auth/reject`
+
+**Request Body**:
+
+```json
+{
+  "user_id": 12345,
+  "provider_name": "vpn123"
+}
+```
+
+**Request Schema**:
+
+| Field           | Type    | Required | Description    | Constraints                              |
+| --------------- | ------- | -------- | -------------- | ---------------------------------------- |
+| `user_id`       | integer | Yes      | Target user ID | 1–999999999999                           |
+| `provider_name` | string  | Yes      | Provider name  | 4–16 chars, `^[a-z0-9]+(?:-[a-z0-9]+)*$` |
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "user_id": 12345,
+  "status": null
+}
+```
+
+**Notes**:
+
+- If the provider already created subscriptions for this user, the authorization is **revoked** instead of deleted (keeping an audit trail and avoiding an implicit cascade delete of those subscriptions) — the response `status` will be `"revoked"` in that case, not `null`.
+- If no subscriptions exist yet, the authorization row is deleted outright and `status` is returned as `null`.
+
+**Error Responses**:
+
+- `401 Unauthorized`: Invalid signature or timestamp
+- `403 Forbidden`: IP not in whitelist
+- `404 Not Found`: Provider, user, or authorization not found
+
+---
+
 #### Ban IP Address
 
 Temporarily or permanently ban an IP address.
@@ -1544,12 +1929,24 @@ interface SubscriptionListItem {
 
 ### Provider Connection Response
 
-Returned by the Provider API's connection-management endpoints (`GET`/`POST` `/api/v1/providers/{user_id}`, `POST /api/v1/providers/{user_id}/revoke`).
+Returned by `GET /api/v1/providers/{user_id}` and `POST /api/v1/providers/{user_id}/revoke`.
 
 ```typescript
 interface ProviderConnectionResponse {
   user_id: number; // User ID
-  status: "approved" | "revoked"; // Current authorization status
+  status: "pending" | "approved" | "revoked"; // Current authorization status
+}
+```
+
+### Provider Connection Create Response
+
+Returned by `POST /api/v1/providers/{user_id}`. Extends `ProviderConnectionResponse` with a `connection_link` for the user to confirm the connection.
+
+```typescript
+interface ProviderConnectionCreateResponse {
+  user_id: number; // User ID
+  status: "pending" | "approved" | "revoked"; // Current authorization status
+  connection_link: string | null; // Link for the user to confirm; null once already approved
 }
 ```
 
@@ -1583,26 +1980,27 @@ All errors follow this structure:
 
 ### Error Codes
 
-| Code                      | HTTP Status | Description                                            |
-| ------------------------- | ----------- | ------------------------------------------------------ |
-| `invalid_token`           | 401         | Invalid or missing API token                           |
-| `forbidden`               | 403         | Access denied (wrong user or inactive account)         |
-| `user_not_found`          | 404         | User does not exist                                    |
-| `not_found`               | 404         | Generic resource not found                             |
-| `subscription_not_found`  | 404         | Subscription does not exist                            |
-| `source_not_found`        | 404         | Source ID not found                                    |
-| `invalid_config`          | 400         | Invalid proxy configuration URI                        |
-| `invalid_url`             | 400         | Invalid URL format                                     |
-| `duplicate_name`          | 409         | Subscription name already exists                       |
-| `circular_reference`      | 500         | Circular reference detected in subscription chain      |
-| `nesting_too_deep`        | 500         | Subscription nesting exceeds max depth (default: 3)    |
-| `too_many_configs`        | 413         | Resolved configs exceed limit (default: 150)           |
-| `too_many_sources`        | 413         | Sources exceed limit (default: 150)                    |
-| `too_many_subscriptions`  | 403         | User subscription limit reached (default: 3)           |
-| `too_many_approved_users` | 422         | Provider's approved-user limit reached (default: 1000) |
-| `too_many_requests`       | 429         | Rate limit exceeded                                    |
-| `fetch_error`             | 502         | Failed to fetch external URL                           |
-| `cache_error`             | 500         | Cache operation failed                                 |
+| Code                           | HTTP Status | Description                                                                                                                |
+| ------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_token`                | 401         | Invalid or missing API token                                                                                               |
+| `forbidden`                    | 403         | Access denied (wrong user or inactive account)                                                                             |
+| `user_not_found`               | 404         | User does not exist                                                                                                        |
+| `not_found`                    | 404         | Generic resource not found                                                                                                 |
+| `subscription_not_found`       | 404         | Subscription does not exist                                                                                                |
+| `source_not_found`             | 404         | Source ID not found                                                                                                        |
+| `invalid_config`               | 400         | Invalid proxy configuration URI                                                                                            |
+| `invalid_url`                  | 400         | Invalid URL format                                                                                                         |
+| `duplicate_name`               | 409         | Subscription name already exists                                                                                           |
+| `circular_reference`           | 500         | Circular reference detected in subscription chain                                                                          |
+| `nesting_too_deep`             | 500         | Subscription nesting exceeds max depth (default: 3)                                                                        |
+| `too_many_configs`             | 413         | Resolved configs exceed limit (default: 150)                                                                               |
+| `too_many_sources`             | 413         | Sources exceed limit (default: 150)                                                                                        |
+| `too_many_subscriptions`       | 403         | User subscription limit reached (default: 3)                                                                               |
+| `too_many_providers`           | 422         | User's authorized-providers limit reached (default: 5)                                                                     |
+| `invalid_authorization_status` | 409         | Provider authorization is in a status that doesn't support the requested action (e.g. approving a `revoked` authorization) |
+| `too_many_requests`            | 429         | Rate limit exceeded                                                                                                        |
+| `fetch_error`                  | 502         | Failed to fetch external URL                                                                                               |
+| `cache_error`                  | 500         | Cache operation failed                                                                                                     |
 
 ### Validation Errors
 
@@ -1899,9 +2297,9 @@ Default configuration limits (can be customized via environment variables):
 | Max sources per subscription    | 150     | `MAX_SOURCES_PER_SUBSCRIPTION` |
 | Max configs per subscription    | 150     | `MAX_CONFIGS_PER_SUBSCRIPTION` |
 | Max nesting depth               | 3       | `MAX_NESTING_DEPTH`            |
+| Max approved providers per user | 5       | `MAX_PROVIDERS_PER_USER`       |
 | Fetch timeout                   | 3s      | `FETCH_TIMEOUT`                |
 | Redis TTL                       | 600s    | `REDIS_TTL`                    |
-| Max approved users per provider | 1000    | `MAX_PROVIDER_USERS`           |
 
 ---
 

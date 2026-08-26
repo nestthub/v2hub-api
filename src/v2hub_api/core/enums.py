@@ -94,7 +94,9 @@ class ErrorCode(StrEnum):
     TOO_MANY_CONFIGS = "too_many_configs"
     TOO_MANY_SOURCES = "too_many_sources"
     TOO_MANY_SUBSCRIPTIONS = "too_many_subscriptions"
-    TOO_MANY_APPROVED_USERS = "too_many_approved_users"
+    TOO_MANY_PROVIDERS = "too_many_providers"
+
+    INVALID_AUTHORIZATION_STATUS = "invalid_authorization_status"
 
     RATE_LIMIT_EXCEEDED = "too_many_requests"
 

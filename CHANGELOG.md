@@ -9,11 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- User self-service endpoints for approving and rejecting pending provider connection requests (`POST /me/connections/{provider_name}/approve` and `/reject`).
+- `ConnectionResponse.status` exposing the current provider authorization status (`pending`, `approved`, or `revoked`) in the `/me/connections` API.
+- `invalid_authorization_status` application error for connection operations that require a specific authorization state.
+- Provider connection authorization flow with pending, approval, and rejection states.
+- HMAC-signed provider connection invite links for securely authorizing new users.
+- Admin endpoints for retrieving, approving, and rejecting provider authorization requests.
+- Configurable limit of approved providers per user (`MAX_PROVIDERS_PER_USER`, default 5).
+- Alembic migration `0004_provider_authorization_pending_default`, adding `PENDING` to the `providerauthorizationstatus` database enum and switching the `provider_authorizations.status` column default from `APPROVED` to `PENDING`.
 - Centralized `core/constants.py` module defining hash, token, and text-field lengths, shared by both SQLAlchemy models and Pydantic schemas.
 - Alembic migration `0003_adjust_database_column_lengths`, aligning DB column sizes (`config_comments`, `external_cache`, `provider_authorizations`, etc.) with the actual data formats.
 
 ### Changed
 
+- `/me/connections` now returns both `PENDING` and `APPROVED` provider connections; revoked authorizations remain excluded.
+- Provider connection approval and rejection through the `/me` API now require the authorization to be in `PENDING` status. Repeated approval of an already `APPROVED` connection remains idempotent, while invalid authorization states return HTTP 409.
+- Rejecting a pending connection preserves the authorization as `REVOKED` when provider subscriptions already exist; otherwise the pending authorization is deleted.
+- Provider connection endpoint now returns a connection link for users who have not yet been authorized.
+- Revoked provider authorizations are reinitialized as pending when a new connection is requested.
+- Provider authorization limits are now enforced per user instead of per provider.
+- `provider_authorizations.status` now defaults to `PENDING` instead of `APPROVED`, both in the `ProviderAuthorization` model and at the database schema level (migration `0004`). A newly created authorization no longer grants provider access until it is explicitly approved.
 - Added provider URL validation using the existing external URL safety checks. Provider URLs are limited to 255 characters and must use a safe HTTP(S) URL without localhost, private, link-local, or other restricted addresses.
 - Restricted `provider_name` to 4–16 characters using only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`); leading, trailing, and consecutive hyphens are not allowed.
 - Renamed the `config_id` field to `config_hash` in the comment/source-settings update request (the old name is still accepted as a legacy alias).
@@ -21,8 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tightened field validation: `provider_name` (4–16 chars), `subscription.name`/`description` (≤ 64), `comment` (≤ 255), `url` (≤ 255), `user_id` (1–999,999,999,999), and hashes (`config_hash`, `source_id`, `url_hash` — 32 chars; `user_hash`/`provider_hash`/`owner_hash` — 36 chars, UUID format).
 - Narrowed URL columns in the database from `TEXT` to `VARCHAR(255)` to match the validation limit.
 
+### Fixed
+
+- Creating a provider authorization for an already-known user via `POST /providers/{user_id}` no longer risks defaulting to `APPROVED` — it now always requests `PENDING` explicitly, and the underlying column default was corrected to match (see migration `0004`). Previously this path could silently grant a provider full access without user confirmation and without going through the `MAX_PROVIDERS_PER_USER` quota check.
+- Admin endpoint `POST /admin/providers/auth` no longer creates a user record as a side effect of a request naming a nonexistent provider; the provider-exists check now runs before any user is created.
+
 ### Removed
 
+- Removed the previous maximum approved users per provider limit (`MAX_PROVIDER_USERS`).
 - The `API_TOKEN_LENGTH` setting from `.env.example`, the README, and `Settings` — token length is no longer configurable.
 
 ### Docs
@@ -31,8 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Tests
 
+- Added `test_me_endpoints.py`: HTTP-level coverage for the `/me` self-service router, including current user info, pending/approved/revoked connection states, approval and rejection flows, invalid authorization states, revocation, and preservation of authorizations and subscriptions when rejecting a connection with existing subscriptions.
+- Added coverage for the maximum approved providers per user, including rejection of a sixth provider.
 - Added `test_admin_security.py`: HTTP-level coverage for the admin HMAC request-signature dependency and the IP-allowlist dependency, including a regression test for the query-string signature fix (commit `57c7cb3`).
-- Added `test_me_endpoints.py`: HTTP-level coverage for the `/me` self-service router (current user info, connection listing/lookup/revocation).
 - Added `test_schema_field_limits.py`: Pydantic-level coverage for the new field-length limits, including the `config_id` → `config_hash` legacy alias.
 - Added `test_length_consistency.py`: cross-layer consistency checks tying together token/hash generators, `core/constants.py`, Pydantic schemas, SQLAlchemy column metadata, and real database round-trips — including an explicit test documenting that the SQLite test backend does not enforce `VARCHAR(n)` length the way production PostgreSQL does.
 - Extended `test_provider_service.py` with coverage for `ProviderService.update_provider_name` (rename, idempotency, not-found, duplicate-name, and no-partial-apply-on-conflict cases).

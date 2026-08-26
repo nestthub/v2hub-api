@@ -56,6 +56,11 @@ class ProviderAuthorizationRepository(BaseRepository[ProviderAuthorization]):
     ) -> set[str]:
         """
         Get hashes of all providers currently approved by the user.
+
+        Used where the caller needs the actual set of provider hashes
+        (e.g. to filter subscriptions down to authorized providers). If
+        only the *count* is needed, prefer `get_user_approved_providers_count`,
+        which runs a `COUNT` query instead of materializing every row.
         """
         stmt = select(ProviderAuthorization.provider_hash).where(
             ProviderAuthorization.user_hash == user_hash,
@@ -69,7 +74,13 @@ class ProviderAuthorizationRepository(BaseRepository[ProviderAuthorization]):
         self,
         user_hash: str,
     ) -> int:
-        """Get number of providers authorized by user (any status)."""
+        """
+        Get the number of providers currently approved by the user.
+
+        Backs the `MAX_PROVIDERS_PER_USER` quota check in
+        `ProviderAuthorizationService.grant`. Only APPROVED authorizations
+        count -- a PENDING or REVOKED row does not consume the quota.
+        """
         stmt = (
             select(func.count())
             .select_from(ProviderAuthorization)
@@ -140,17 +151,6 @@ class ProviderAuthorizationRepository(BaseRepository[ProviderAuthorization]):
         )
         result = await self.session.execute(stmt)
         return cast("list[ProviderAuthorization]", result.scalars().all())
-
-    async def create_authorization(
-        self,
-        provider_hash: str,
-        user_hash: str,
-    ) -> ProviderAuthorization:
-        """Create new authorization (defaults to APPROVED via model default)."""
-        return await self.create(
-            provider_hash=provider_hash,
-            user_hash=user_hash,
-        )
 
     async def set_status(
         self,

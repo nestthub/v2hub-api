@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from v2hub_api.core.enums import ErrorCode
+from v2hub_api.core.enums import ErrorCode, ProviderAuthorizationStatus
 
 
 class VPNSubscriptionError(Exception):
@@ -234,14 +234,25 @@ class TooManySubscriptionsError(VPNSubscriptionError):
         )
 
 
-class TooManyApprovedUsersError(VPNSubscriptionError):
-    """Raised when a provider has too many approved users."""
+class TooManyProvidersError(VPNSubscriptionError):
+    """Raised when an approved providers has too many sources."""
 
     def __init__(self, count: int, max_count: int) -> None:
         super().__init__(
-            message=(f"Approved user count ({count}) exceeds maximum allowed ({max_count})"),
-            error_code=ErrorCode.TOO_MANY_APPROVED_USERS,
+            message=(f"Providers count ({count}) exceeds maximum allowed ({max_count})"),
+            error_code=ErrorCode.TOO_MANY_PROVIDERS,
             details={"count": count, "max_count": max_count},
+        )
+
+
+class InvalidAuthorizationStatusError(VPNSubscriptionError):
+    """Raised when an authorization has an invalid status for the operation."""
+
+    def __init__(self, status: ProviderAuthorizationStatus) -> None:
+        super().__init__(
+            message="Invalid authorization status",
+            error_code=ErrorCode.INVALID_AUTHORIZATION_STATUS,
+            details={"status": status.value},
         )
 
 
@@ -302,7 +313,8 @@ def to_http_exception(exc: Exception) -> HTTPException:
             TooManyConfigsError: status.HTTP_422_UNPROCESSABLE_CONTENT,
             TooManySourcesError: status.HTTP_422_UNPROCESSABLE_CONTENT,
             TooManySubscriptionsError: status.HTTP_422_UNPROCESSABLE_CONTENT,
-            TooManyApprovedUsersError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            TooManyProvidersError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            InvalidAuthorizationStatusError: status.HTTP_409_CONFLICT,
             ExternalFetchError: status.HTTP_400_BAD_REQUEST,
             CacheError: status.HTTP_500_INTERNAL_SERVER_ERROR,
             RateLimitError: status.HTTP_429_TOO_MANY_REQUESTS,

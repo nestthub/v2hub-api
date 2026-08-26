@@ -544,22 +544,116 @@ class ResolvedConfig(BaseModel):
 
 ---
 
-### ProviderConnectionResponse
+### MeResponse
 
-Returned by `GET`/`POST /api/v1/providers/{user_id}` and `POST /api/v1/providers/{user_id}/revoke`.
+Returned by `GET /api/v1/me`.
 
 ```python
-class ProviderConnectionResponse(BaseModel):
+class MeResponse(BaseModel):
     user_id: int
-    status: ProviderAuthorizationStatus  # "approved" | "revoked"
+    is_active: bool
 ```
 
 **Fields**:
 
-| Field     | Type      | Description             |
-| --------- | --------- | ----------------------- |
-| `user_id` | `integer` | User ID                 |
-| `status`  | `enum`    | `approved` or `revoked` |
+| Field       | Type      | Description                        |
+| ----------- | --------- | ---------------------------------- |
+| `user_id`   | `integer` | User identifier                    |
+| `is_active` | `boolean` | Whether the user account is active |
+
+**Example**:
+
+```json
+{
+  "user_id": 12345,
+  "is_active": true
+}
+```
+
+---
+
+### ConnectionResponse
+
+Authorized (or authorizable) provider connection for the current user. Returned by `GET /api/v1/me/connections/{provider_name}`, `POST /api/v1/me/connections/{provider_name}/approve`, `POST /api/v1/me/connections/{provider_name}/reject`, and as list items in `ConnectionsResponse`.
+
+```python
+class ConnectionResponse(BaseModel):
+    provider_name: str
+    provider_url: str | None
+    is_authorized: bool
+    status: ProviderAuthorizationStatus | None = None
+```
+
+**Fields**:
+
+| Field           | Type           | Description                                                                            | Constraints    |
+| --------------- | -------------- | -------------------------------------------------------------------------------------- | -------------- |
+| `provider_name` | `string`       | Provider name                                                                          | 4–16 chars     |
+| `provider_url`  | `string\|null` | Provider API URL                                                                       | ≤ 255 chars    |
+| `is_authorized` | `boolean`      | Whether the provider is currently authorized (`true` only when `status` is `approved`) |                |
+| `status`        | `enum\|null`   | `pending`, `approved`, `revoked`, or `null` if no authorization exists yet             | default `null` |
+
+**Example**:
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "is_authorized": true,
+  "status": "approved"
+}
+```
+
+---
+
+### ConnectionsResponse
+
+Returned by `GET /api/v1/me/connections`. Only `pending` and `approved` connections are included — `revoked` authorizations are excluded.
+
+```python
+class ConnectionsResponse(BaseModel):
+    connections: list[ConnectionResponse]
+```
+
+**Fields**:
+
+| Field         | Type                        | Description                                             |
+| ------------- | --------------------------- | ------------------------------------------------------- |
+| `connections` | `array[ConnectionResponse]` | Provider connections authorized or pending for the user |
+
+**Example**:
+
+```json
+{
+  "connections": [
+    {
+      "provider_name": "vpn123",
+      "provider_url": "https://vpn123.example.com",
+      "is_authorized": true,
+      "status": "approved"
+    }
+  ]
+}
+```
+
+---
+
+### ProviderConnectionResponse
+
+Returned by `GET /api/v1/providers/{user_id}` and `POST /api/v1/providers/{user_id}/revoke`.
+
+```python
+class ProviderConnectionResponse(BaseModel):
+    user_id: int
+    status: ProviderAuthorizationStatus  # "pending" | "approved" | "revoked"
+```
+
+**Fields**:
+
+| Field     | Type      | Description                         |
+| --------- | --------- | ----------------------------------- |
+| `user_id` | `integer` | User ID                             |
+| `status`  | `enum`    | `pending`, `approved`, or `revoked` |
 
 **Example**:
 
@@ -567,6 +661,44 @@ class ProviderConnectionResponse(BaseModel):
 {
   "user_id": 12345,
   "status": "approved"
+}
+```
+
+---
+
+### ProviderConnectionCreateResponse
+
+Returned by `POST /api/v1/providers/{user_id}`. Extends `ProviderConnectionResponse` with a `connection_link` for the user to open and confirm the connection.
+
+```python
+class ProviderConnectionCreateResponse(ProviderConnectionResponse):
+    connection_link: str | None
+```
+
+**Fields**:
+All fields from `ProviderConnectionResponse` plus:
+
+| Field             | Type           | Description                                                                  |
+| ----------------- | -------------- | ---------------------------------------------------------------------------- |
+| `connection_link` | `string\|null` | Link for the user to confirm the connection. `null` once already `approved`. |
+
+**Example** (unknown user — HMAC-signed invite link):
+
+```json
+{
+  "user_id": 12345,
+  "status": "pending",
+  "connection_link": "https://t.me/v2hubot?start=conn_3f9a1c7e0b4d2f6a8e1c9b3d_vpn123"
+}
+```
+
+**Example** (known user — deep link, or already approved):
+
+```json
+{
+  "user_id": 12345,
+  "status": "approved",
+  "connection_link": null
 }
 ```
 
@@ -1261,6 +1393,107 @@ class ProviderTokenRefreshResponse(AdminBaseModel):
 
 ---
 
+### ProviderAuthorizationInfoResponse
+
+Returned by all four `/api/v1/admin/providers/auth/*` endpoints, describing the current state of a provider ↔ user authorization.
+
+```python
+class ProviderAuthorizationInfoResponse(AdminBaseModel):
+    provider_name: str
+    provider_url: str | None
+    user_id: int
+    status: ProviderAuthorizationStatus | None = None
+```
+
+**Fields**:
+
+| Field           | Type           | Required | Description                                                                    | Constraints    |
+| --------------- | -------------- | -------- | ------------------------------------------------------------------------------ | -------------- |
+| `provider_name` | `string`       | Yes      | Provider name                                                                  |                |
+| `provider_url`  | `string\|null` | Yes      | Provider URL                                                                   |                |
+| `user_id`       | `integer`      | Yes      | User ID                                                                        | 1–999999999999 |
+| `status`        | `enum\|null`   | No       | `pending`, `approved`, `revoked`, or `null` if no authorization row exists yet | default `null` |
+
+**Example**:
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "user_id": 12345,
+  "status": "pending"
+}
+```
+
+---
+
+### ProviderAuthorizationBaseRequest
+
+Shared base for the two admin decision endpoints (`/approve`, `/reject`) below — not used directly as a request body itself.
+
+```python
+class ProviderAuthorizationBaseRequest(AdminBaseModel):
+    user_id: int
+    provider_name: str
+```
+
+**Fields**:
+
+| Field           | Type      | Required | Description    | Constraints                              |
+| --------------- | --------- | -------- | -------------- | ---------------------------------------- |
+| `user_id`       | `integer` | Yes      | Target user ID | 1–999999999999                           |
+| `provider_name` | `string`  | Yes      | Provider name  | 4–16 chars, `^[a-z0-9]+(?:-[a-z0-9]+)*$` |
+
+---
+
+### ProviderAuthorizationRequest
+
+Request body for `POST /api/v1/admin/providers/auth`. Extends `ProviderAuthorizationBaseRequest` with an optional `hmac`.
+
+```python
+class ProviderAuthorizationRequest(ProviderAuthorizationBaseRequest):
+    hmac: str | None = None
+```
+
+**Fields**:
+All fields from `ProviderAuthorizationBaseRequest` plus:
+
+| Field  | Type           | Required | Description                                                                                     | Constraints               |
+| ------ | -------------- | -------- | ----------------------------------------------------------------------------------------------- | ------------------------- |
+| `hmac` | `string\|null` | No       | HMAC from a `conn_{hmac}_{provider_name}` invite link; required to create a _new_ authorization | Exactly 24 hex characters |
+
+**Example**:
+
+```json
+{
+  "user_id": 12345,
+  "provider_name": "vpn123",
+  "hmac": "3f9a1c7e0b4d2f6a8e1c9b3d"
+}
+```
+
+---
+
+### ProviderAuthorizationDecisionRequest
+
+Request body for `POST /api/v1/admin/providers/auth/approve` and `POST /api/v1/admin/providers/auth/reject`. Identical shape to `ProviderAuthorizationBaseRequest` (no extra fields).
+
+```python
+class ProviderAuthorizationDecisionRequest(ProviderAuthorizationBaseRequest):
+    pass
+```
+
+**Example**:
+
+```json
+{
+  "user_id": 12345,
+  "provider_name": "vpn123"
+}
+```
+
+---
+
 ## Enumerations
 
 ### SourceType
@@ -1331,16 +1564,28 @@ Status of a provider ↔ user authorization relationship.
 
 ```python
 class ProviderAuthorizationStatus(StrEnum):
+    PENDING = "pending"
     APPROVED = "approved"
     REVOKED = "revoked"
 ```
 
 **Values**:
 
-| Value      | Description                                                             |
-| ---------- | ----------------------------------------------------------------------- |
-| `APPROVED` | Provider is authorized to manage this user's subscriptions              |
-| `REVOKED`  | Authorization has been revoked; provider can no longer act for the user |
+| Value      | Description                                                                                                           |
+| ---------- | --------------------------------------------------------------------------------------------------------------------- |
+| `PENDING`  | Connection requested but not yet confirmed; the default for newly created authorizations. Provider has no access yet. |
+| `APPROVED` | Provider is authorized to manage this user's subscriptions                                                            |
+| `REVOKED`  | Authorization has been revoked; provider can no longer act for the user                                               |
+
+**Lifecycle**:
+
+```
+PENDING ──(approve)──> APPROVED ──(revoke)──> REVOKED
+   ^                                              │
+   └──────────────(reinitialize/re-invite)────────┘
+```
+
+A new authorization row defaults to `PENDING` (both at the ORM level and, since migration `0004`, at the database schema level) and requires an explicit approval step — via `POST /api/v1/providers/{user_id}` followed by user confirmation, or the admin `POST /api/v1/admin/providers/auth/approve` endpoint — before it becomes `APPROVED`. It is never created as `APPROVED` implicitly.
 
 ---
 

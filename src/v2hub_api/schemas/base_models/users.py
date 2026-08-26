@@ -9,6 +9,7 @@ from v2hub_api.core.constants import (
     USER_ID_MAX,
     USER_ID_MIN,
 )
+from v2hub_api.core.enums import ProviderAuthorizationStatus
 
 from .base import BaseModelConfig
 
@@ -42,6 +43,14 @@ class ConnectionResponse(BaseModelConfig):
         bool,
         Field(
             description="Whether the provider is currently authorized to manage the user's subscriptions",
+        ),
+    ]
+
+    status: Annotated[
+        ProviderAuthorizationStatus | None,
+        Field(
+            None,
+            description="Provider authorization status.",
         ),
     ]
 
