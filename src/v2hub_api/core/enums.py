@@ -96,6 +96,8 @@ class ErrorCode(StrEnum):
     TOO_MANY_SUBSCRIPTIONS = "too_many_subscriptions"
     TOO_MANY_PROVIDERS = "too_many_providers"
 
+    INVALID_AUTHORIZATION_STATUS = "invalid_authorization_status"
+
     RATE_LIMIT_EXCEEDED = "too_many_requests"
 
     # External Service Errors
