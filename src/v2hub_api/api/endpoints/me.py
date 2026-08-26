@@ -84,7 +84,7 @@ async def get_connections(
                 ConnectionResponse(
                     provider_name=authorization.provider.provider_name,
                     provider_url=authorization.provider.provider_url,
-                    is_authorized=True,
+                    is_authorized=authorization.status == ProviderAuthorizationStatus.APPROVED,
                     status=authorization.status,
                 )
                 for authorization in authorizations
