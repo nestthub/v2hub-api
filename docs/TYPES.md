@@ -1761,5 +1761,5 @@ IPAddress = Annotated[str, Field(min_length=7, max_length=45)]
 }
 ```
 
-**API Version**: 1.1.0
-**Last Updated**: August 15, 2026
+**API Version**: 1.1.2
+**Last Updated**: August 25, 2026

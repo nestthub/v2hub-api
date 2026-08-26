@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-08-26
+
 ### Added
 
 - User self-service endpoints for approving and rejecting pending provider connection requests (`POST /me/connections/{provider_name}/approve` and `/reject`).
