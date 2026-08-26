@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - HMAC-signed provider connection invite links for securely authorizing new users.
 - Admin endpoints for retrieving, approving, and rejecting provider authorization requests.
 - Configurable limit of approved providers per user (`MAX_PROVIDERS_PER_USER`, default 5).
+- Alembic migration `0004_provider_authorization_pending_default`, adding `PENDING` to the `providerauthorizationstatus` database enum and switching the `provider_authorizations.status` column default from `APPROVED` to `PENDING`.
 - Centralized `core/constants.py` module defining hash, token, and text-field lengths, shared by both SQLAlchemy models and Pydantic schemas.
 - Alembic migration `0003_adjust_database_column_lengths`, aligning DB column sizes (`config_comments`, `external_cache`, `provider_authorizations`, etc.) with the actual data formats.
 
@@ -21,12 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Provider connection endpoint now returns a connection link for users who have not yet been authorized.
 - Revoked provider authorizations are reinitialized as pending when a new connection is requested.
 - Provider authorization limits are now enforced per user instead of per provider.
+- `provider_authorizations.status` now defaults to `PENDING` instead of `APPROVED`, both in the `ProviderAuthorization` model and at the database schema level (migration `0004`). A newly created authorization no longer grants provider access until it is explicitly approved.
 - Added provider URL validation using the existing external URL safety checks. Provider URLs are limited to 255 characters and must use a safe HTTP(S) URL without localhost, private, link-local, or other restricted addresses.
 - Restricted `provider_name` to 4–16 characters using only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`); leading, trailing, and consecutive hyphens are not allowed.
 - Renamed the `config_id` field to `config_hash` in the comment/source-settings update request (the old name is still accepted as a legacy alias).
 - API tokens and subscription tokens now have a fixed length (32 random bytes → 43 Base64URL characters) and are no longer configurable via the `API_TOKEN_LENGTH` environment variable.
 - Tightened field validation: `provider_name` (4–16 chars), `subscription.name`/`description` (≤ 64), `comment` (≤ 255), `url` (≤ 255), `user_id` (1–999,999,999,999), and hashes (`config_hash`, `source_id`, `url_hash` — 32 chars; `user_hash`/`provider_hash`/`owner_hash` — 36 chars, UUID format).
 - Narrowed URL columns in the database from `TEXT` to `VARCHAR(255)` to match the validation limit.
+
+### Fixed
+
+- Creating a provider authorization for an already-known user via `POST /providers/{user_id}` no longer risks defaulting to `APPROVED` — it now always requests `PENDING` explicitly, and the underlying column default was corrected to match (see migration `0004`). Previously this path could silently grant a provider full access without user confirmation and without going through the `MAX_PROVIDERS_PER_USER` quota check.
+- Admin endpoint `POST /admin/providers/auth` no longer creates a user record as a side effect of a request naming a nonexistent provider; the provider-exists check now runs before any user is created.
 
 ### Removed
 

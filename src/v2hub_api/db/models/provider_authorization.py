@@ -37,7 +37,8 @@ class ProviderAuthorization(TimestampMixin, Base):
 
     status: Mapped[ProviderAuthorizationStatus] = mapped_column(
         Enum(ProviderAuthorizationStatus),
-        default=ProviderAuthorizationStatus.APPROVED,
+        default=ProviderAuthorizationStatus.PENDING,
+        server_default=ProviderAuthorizationStatus.PENDING,
         nullable=False,
     )
 

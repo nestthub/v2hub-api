@@ -124,12 +124,19 @@ async def create_connection(
 
             if authorization is None:
                 # First-ever connection attempt for this pair: create a
-                # PENDING row. This does not grant access by itself --
-                # the user (or an admin, via /approve) still needs to
-                # confirm it before the provider can act on their behalf.
+                # PENDING row (the model's column default -- see
+                # migration 0004). This does not grant access by itself
+                # -- the user (or an admin, via /approve) still needs to
+                # confirm it before the provider can act on their
+                # behalf. Passed explicitly anyway rather than relying
+                # on the default, since this is the security-relevant
+                # boundary where an accidental APPROVED would bypass
+                # both user confirmation and grant()'s
+                # MAX_PROVIDERS_PER_USER quota check.
                 authorization = await authorization_service.add_authorization(
                     provider_hash=provider.provider_hash,
                     user_hash=user.user_hash,
+                    status=ProviderAuthorizationStatus.PENDING,
                 )
 
             elif authorization.status == ProviderAuthorizationStatus.APPROVED:

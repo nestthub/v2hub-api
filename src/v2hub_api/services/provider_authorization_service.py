@@ -63,14 +63,19 @@ class ProviderAuthorizationService:
 
         This does NOT enforce the `MAX_PROVIDERS_PER_USER` quota -- that
         check only applies when a provider becomes APPROVED (see `grant`).
-        A PENDING row created here does not yet grant the provider any
-        access to the user's subscriptions.
 
         Args:
             provider_hash: Hash of the provider requesting authorization.
             user_hash: Hash of the user being asked to authorize.
-            status: Initial status. Defaults to the model's column
-                default (PENDING) when omitted.
+            status: Initial status. When omitted, falls back to the
+                `ProviderAuthorization` model's column default, which is
+                PENDING (see migration 0004 and the model definition) --
+                a row created this way still requires confirmation via
+                `grant` (or the admin `/approve` endpoint) before the
+                provider has any access. Pass
+                `status=ProviderAuthorizationStatus.APPROVED` explicitly
+                for flows that intentionally create an already-approved
+                row (e.g. certain admin/provider-initiated paths).
 
         Returns:
             Created provider authorization.

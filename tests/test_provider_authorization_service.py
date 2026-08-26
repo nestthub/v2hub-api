@@ -29,6 +29,41 @@ async def _make_provider(db_session, owner_user_id: int, name: str):
     )
 
 
+class TestAddAuthorizationDefaultStatus:
+    """
+    Regression coverage for migration 0004: a `provider_authorizations`
+    row created without an explicit `status` must default to PENDING at
+    the schema level, not APPROVED. Prior to that migration the column
+    default was APPROVED, which meant creating a row via
+    `add_authorization(..., status=None)` silently granted full access
+    with no confirmation step.
+    """
+
+    async def test_add_authorization_without_status_defaults_to_pending(self, db_session):
+        provider = await _make_provider(db_session, owner_user_id=1, name="vpn1")
+        user = await _make_user(db_session, user_id=100)
+        service = ProviderAuthorizationService(db_session)
+
+        authorization = await service.add_authorization(provider.provider_hash, user.user_hash)
+
+        assert authorization.status == ProviderAuthorizationStatus.PENDING
+
+    async def test_add_authorization_can_still_create_approved_explicitly(self, db_session):
+        """Flows that intentionally want an already-approved row (e.g.
+        certain admin paths) must still be able to opt in explicitly."""
+        provider = await _make_provider(db_session, owner_user_id=1, name="vpn1")
+        user = await _make_user(db_session, user_id=100)
+        service = ProviderAuthorizationService(db_session)
+
+        authorization = await service.add_authorization(
+            provider.provider_hash,
+            user.user_hash,
+            status=ProviderAuthorizationStatus.APPROVED,
+        )
+
+        assert authorization.status == ProviderAuthorizationStatus.APPROVED
+
+
 class TestGrant:
     async def test_creates_approved_authorization(self, db_session):
         provider = await _make_provider(db_session, 1, "vpn1")
