@@ -8,6 +8,7 @@
 - [API Endpoints](#api-endpoints)
   - [Public Endpoints](#public-endpoints)
   - [Subscription Management](#subscription-management)
+  - [User Self-Service API](#user-self-service-api)
   - [Provider API](#provider-api)
   - [Admin Endpoints](#admin-endpoints)
 - [Data Models](#data-models)
@@ -675,6 +676,190 @@ Manually refresh all external URL sources in a subscription.
 
 ---
 
+### User Self-Service API
+
+Endpoints for the currently authenticated user to view their account, list and manage their provider connections, and act on connection requests. All endpoints require authentication via the `API-Token` header using a **user** token (see [User Authentication](#user-authentication)).
+
+**Base Path**: `/api/v1/me`
+
+#### Get Current User
+
+Get information about the currently authenticated user.
+
+**Endpoint**: `GET /api/v1/me`
+
+**Response** (200 OK):
+
+```json
+{
+  "user_id": 12345,
+  "is_active": true
+}
+```
+
+**Response Schema**:
+
+| Field       | Type    | Description                        |
+| ----------- | ------- | ---------------------------------- |
+| `user_id`   | integer | User ID                            |
+| `is_active` | boolean | Whether the user account is active |
+
+---
+
+#### List Connections
+
+Get all providers currently authorized (`approved`) or awaiting confirmation (`pending`) to manage the user's subscriptions. Revoked authorizations are excluded.
+
+**Endpoint**: `GET /api/v1/me/connections`
+
+**Response** (200 OK):
+
+```json
+{
+  "connections": [
+    {
+      "provider_name": "vpn123",
+      "provider_url": "https://vpn123.example.com",
+      "is_authorized": true,
+      "status": "approved"
+    },
+    {
+      "provider_name": "vpn456",
+      "provider_url": "https://vpn456.example.com",
+      "is_authorized": true,
+      "status": "pending"
+    }
+  ]
+}
+```
+
+**Notes**:
+
+- `is_authorized` is always `true` for entries in this list — both `pending` and `approved` connections are included, but only entries the user has actually initiated or been offered are returned. Check `status` to distinguish a connection still awaiting confirmation (`pending`) from one already active (`approved`).
+
+---
+
+#### Get Provider Connection
+
+Get provider information and the current user's connection status for a specific provider. The provider is returned even when the user is not currently connected, so a client can display provider info and offer a connection action.
+
+**Endpoint**: `GET /api/v1/me/connections/{provider_name}`
+
+**Parameters**:
+
+- `provider_name` (path, required): Provider name
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "is_authorized": false,
+  "status": "pending"
+}
+```
+
+**Response Schema**:
+
+| Field           | Type           | Description                                                                |
+| --------------- | -------------- | -------------------------------------------------------------------------- |
+| `provider_name` | string         | Provider name                                                              |
+| `provider_url`  | string \| null | Provider URL                                                               |
+| `is_authorized` | boolean        | `true` only when `status` is `approved`                                    |
+| `status`        | string \| null | `pending`, `approved`, `revoked`, or `null` if no authorization exists yet |
+
+**Error Responses**:
+
+- `404 Not Found`: Provider not found
+
+---
+
+#### Approve Connection
+
+Confirm a `pending` connection request, granting the provider access to manage the user's subscriptions. This is the user-facing counterpart to a connection initiated via the [Provider API](#provider-api) (`POST /api/v1/providers/{user_id}`) or an admin-processed invite link.
+
+**Endpoint**: `POST /api/v1/me/connections/{provider_name}/approve`
+
+**Parameters**:
+
+- `provider_name` (path, required): Provider name
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "is_authorized": true,
+  "status": "approved"
+}
+```
+
+**Notes**:
+
+- If the authorization is already `approved`, the request succeeds and returns the current state unchanged (idempotent).
+- Subject to `MAX_PROVIDERS_PER_USER` (default 5): approving this connection can fail if the user is already at their limit of simultaneously approved providers.
+
+**Error Responses**:
+
+- `404 Not Found`: Provider not found, or no authorization exists for this provider
+- `409 Conflict`: Authorization exists but is neither `pending` nor `approved` (e.g. `revoked`) — cannot be approved directly; request a new connection instead
+- `422 Unprocessable Content`: User's authorized-providers limit reached (`too_many_providers`)
+
+---
+
+#### Reject Connection
+
+Reject a `pending` connection request.
+
+**Endpoint**: `POST /api/v1/me/connections/{provider_name}/reject`
+
+**Parameters**:
+
+- `provider_name` (path, required): Provider name
+
+**Response** (200 OK):
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "is_authorized": false,
+  "status": null
+}
+```
+
+**Notes**:
+
+- If the provider has already created subscriptions for this user, the authorization is **revoked** instead of deleted (audit trail preserved, avoids implicitly cascading those subscriptions) — `status` will be `"revoked"` in that case, not `null`.
+- If no subscriptions exist yet, the pending authorization is deleted outright and `status` is returned as `null`.
+
+**Error Responses**:
+
+- `404 Not Found`: Provider not found, or no authorization exists for this provider
+- `409 Conflict`: Authorization is not `pending` (already `approved` or `revoked`) — use [Revoke Provider Connection](#revoke-connection) to end an active connection instead
+
+---
+
+#### Revoke Connection
+
+Revoke the current user's authorization for a provider. The authorization record and the provider's existing subscriptions for this user are preserved (not deleted), so the user can reconnect later without losing them.
+
+**Endpoint**: `DELETE /api/v1/me/connections/{provider_name}`
+
+**Parameters**:
+
+- `provider_name` (path, required): Provider name
+
+**Response**: `204 No Content`
+
+**Error Responses**:
+
+- `404 Not Found`: Provider not found
+
+---
+
 ### Provider API
 
 Providers are external services (e.g. bots, resellers) that manage VPN subscriptions on behalf of a user. Using the Provider API involves two layers:
@@ -762,7 +947,7 @@ Request (or resume) authorization allowing the provider to manage the given user
 
 **Notes**:
 
-- A new authorization always starts `pending` and requires a separate confirmation step ([Approve Provider Connection](#approve-provider-connection), or the user completing the invite/deep-link flow) before the provider can act on the user's behalf — this endpoint never auto-approves a connection.
+- A new authorization always starts `pending` and requires a separate confirmation step — the user calling [Approve Connection](#approve-connection), or an admin calling [Approve Provider Connection](#approve-provider-connection) — before the provider can act on the user's behalf. This endpoint never auto-approves a connection.
 - Repeated calls for the same `user_id` are idempotent: they reuse the existing authorization row rather than creating duplicates.
 
 **Error Responses**:
@@ -1795,26 +1980,27 @@ All errors follow this structure:
 
 ### Error Codes
 
-| Code                     | HTTP Status | Description                                            |
-| ------------------------ | ----------- | ------------------------------------------------------ |
-| `invalid_token`          | 401         | Invalid or missing API token                           |
-| `forbidden`              | 403         | Access denied (wrong user or inactive account)         |
-| `user_not_found`         | 404         | User does not exist                                    |
-| `not_found`              | 404         | Generic resource not found                             |
-| `subscription_not_found` | 404         | Subscription does not exist                            |
-| `source_not_found`       | 404         | Source ID not found                                    |
-| `invalid_config`         | 400         | Invalid proxy configuration URI                        |
-| `invalid_url`            | 400         | Invalid URL format                                     |
-| `duplicate_name`         | 409         | Subscription name already exists                       |
-| `circular_reference`     | 500         | Circular reference detected in subscription chain      |
-| `nesting_too_deep`       | 500         | Subscription nesting exceeds max depth (default: 3)    |
-| `too_many_configs`       | 413         | Resolved configs exceed limit (default: 150)           |
-| `too_many_sources`       | 413         | Sources exceed limit (default: 150)                    |
-| `too_many_subscriptions` | 403         | User subscription limit reached (default: 3)           |
-| `too_many_providers`     | 422         | User's authorized-providers limit reached (default: 5) |
-| `too_many_requests`      | 429         | Rate limit exceeded                                    |
-| `fetch_error`            | 502         | Failed to fetch external URL                           |
-| `cache_error`            | 500         | Cache operation failed                                 |
+| Code                           | HTTP Status | Description                                                                                                                |
+| ------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_token`                | 401         | Invalid or missing API token                                                                                               |
+| `forbidden`                    | 403         | Access denied (wrong user or inactive account)                                                                             |
+| `user_not_found`               | 404         | User does not exist                                                                                                        |
+| `not_found`                    | 404         | Generic resource not found                                                                                                 |
+| `subscription_not_found`       | 404         | Subscription does not exist                                                                                                |
+| `source_not_found`             | 404         | Source ID not found                                                                                                        |
+| `invalid_config`               | 400         | Invalid proxy configuration URI                                                                                            |
+| `invalid_url`                  | 400         | Invalid URL format                                                                                                         |
+| `duplicate_name`               | 409         | Subscription name already exists                                                                                           |
+| `circular_reference`           | 500         | Circular reference detected in subscription chain                                                                          |
+| `nesting_too_deep`             | 500         | Subscription nesting exceeds max depth (default: 3)                                                                        |
+| `too_many_configs`             | 413         | Resolved configs exceed limit (default: 150)                                                                               |
+| `too_many_sources`             | 413         | Sources exceed limit (default: 150)                                                                                        |
+| `too_many_subscriptions`       | 403         | User subscription limit reached (default: 3)                                                                               |
+| `too_many_providers`           | 422         | User's authorized-providers limit reached (default: 5)                                                                     |
+| `invalid_authorization_status` | 409         | Provider authorization is in a status that doesn't support the requested action (e.g. approving a `revoked` authorization) |
+| `too_many_requests`            | 429         | Rate limit exceeded                                                                                                        |
+| `fetch_error`                  | 502         | Failed to fetch external URL                                                                                               |
+| `cache_error`                  | 500         | Cache operation failed                                                                                                     |
 
 ### Validation Errors
 

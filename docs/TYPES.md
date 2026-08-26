@@ -544,6 +544,100 @@ class ResolvedConfig(BaseModel):
 
 ---
 
+### MeResponse
+
+Returned by `GET /api/v1/me`.
+
+```python
+class MeResponse(BaseModel):
+    user_id: int
+    is_active: bool
+```
+
+**Fields**:
+
+| Field       | Type      | Description                        |
+| ----------- | --------- | ---------------------------------- |
+| `user_id`   | `integer` | User identifier                    |
+| `is_active` | `boolean` | Whether the user account is active |
+
+**Example**:
+
+```json
+{
+  "user_id": 12345,
+  "is_active": true
+}
+```
+
+---
+
+### ConnectionResponse
+
+Authorized (or authorizable) provider connection for the current user. Returned by `GET /api/v1/me/connections/{provider_name}`, `POST /api/v1/me/connections/{provider_name}/approve`, `POST /api/v1/me/connections/{provider_name}/reject`, and as list items in `ConnectionsResponse`.
+
+```python
+class ConnectionResponse(BaseModel):
+    provider_name: str
+    provider_url: str | None
+    is_authorized: bool
+    status: ProviderAuthorizationStatus | None = None
+```
+
+**Fields**:
+
+| Field           | Type           | Description                                                                            | Constraints    |
+| --------------- | -------------- | -------------------------------------------------------------------------------------- | -------------- |
+| `provider_name` | `string`       | Provider name                                                                          | 4–16 chars     |
+| `provider_url`  | `string\|null` | Provider API URL                                                                       | ≤ 255 chars    |
+| `is_authorized` | `boolean`      | Whether the provider is currently authorized (`true` only when `status` is `approved`) |                |
+| `status`        | `enum\|null`   | `pending`, `approved`, `revoked`, or `null` if no authorization exists yet             | default `null` |
+
+**Example**:
+
+```json
+{
+  "provider_name": "vpn123",
+  "provider_url": "https://vpn123.example.com",
+  "is_authorized": true,
+  "status": "approved"
+}
+```
+
+---
+
+### ConnectionsResponse
+
+Returned by `GET /api/v1/me/connections`. Only `pending` and `approved` connections are included — `revoked` authorizations are excluded.
+
+```python
+class ConnectionsResponse(BaseModel):
+    connections: list[ConnectionResponse]
+```
+
+**Fields**:
+
+| Field         | Type                        | Description                                             |
+| ------------- | --------------------------- | ------------------------------------------------------- |
+| `connections` | `array[ConnectionResponse]` | Provider connections authorized or pending for the user |
+
+**Example**:
+
+```json
+{
+  "connections": [
+    {
+      "provider_name": "vpn123",
+      "provider_url": "https://vpn123.example.com",
+      "is_authorized": true,
+      "status": "approved"
+    }
+  ]
+}
+```
+
+---
+
 ### ProviderConnectionResponse
 
 Returned by `GET /api/v1/providers/{user_id}` and `POST /api/v1/providers/{user_id}/revoke`.
