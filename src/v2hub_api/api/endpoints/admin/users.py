@@ -14,8 +14,13 @@ import logging
 
 from fastapi import APIRouter, status
 
-from v2hub_api.api.dependencies import ProviderServiceDep, UserServiceDep
-from v2hub_api.core.exceptions import to_http_exception
+from v2hub_api.api.dependencies import (
+    ProviderAuthorizationServiceDep,
+    ProviderServiceDep,
+    UserServiceDep,
+)
+from v2hub_api.core.enums import ProviderAuthorizationStatus
+from v2hub_api.core.exceptions import NotFoundError, to_http_exception
 from v2hub_api.schemas import (
     TokenRefreshRequest,
     TokenRefreshResponse,
@@ -24,6 +29,7 @@ from v2hub_api.schemas import (
     UserResponse,
     UserStatusUpdateRequest,
 )
+from v2hub_api.schemas.base_models.users import ConnectionResponse, ConnectionsResponse
 
 from .dependencies import AdminSecurityDep, InternalIPDep
 
@@ -110,6 +116,104 @@ async def get_user(
 
     except Exception as e:
         logger.error(f"Failed to return user: {e}")
+        raise to_http_exception(e) from e
+
+
+@router.get(
+    "/{user_id}/providers",
+    response_model=ConnectionsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="List user's providers",
+    description="Get all providers owned by the specified user.",
+)
+async def get_user_providers(
+    user_id: int,
+    user_service: UserServiceDep,
+    authorization_service: ProviderAuthorizationServiceDep,
+    _signature: None = AdminSecurityDep,
+    _ip: None = InternalIPDep,
+) -> ConnectionsResponse:
+    """
+    Get all providers owned by the specified user.
+    """
+    try:
+        user = await user_service.get_user(user_id)
+
+        authorizations = await authorization_service.list_providers_for_user(
+            user_hash=user.user_hash,
+        )
+
+        return ConnectionsResponse(
+            connections=[
+                ConnectionResponse(
+                    provider_name=authorization.provider.provider_name,
+                    provider_url=authorization.provider.provider_url,
+                    is_authorized=authorization.status == ProviderAuthorizationStatus.APPROVED,
+                    status=authorization.status,
+                )
+                for authorization in authorizations
+            ],
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to get providers for user_id=%d: %s",
+            user_id,
+            e,
+        )
+        raise to_http_exception(e) from e
+
+
+@router.get(
+    "/{user_id}/providers/{provider_name}",
+    response_model=ConnectionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get user's provider",
+    description="Get provider information and authorization status for the specified user.",
+)
+async def get_user_provider(
+    user_id: int,
+    provider_name: str,
+    user_service: UserServiceDep,
+    provider_service: ProviderServiceDep,
+    authorization_service: ProviderAuthorizationServiceDep,
+    _signature: None = AdminSecurityDep,
+    _ip: None = InternalIPDep,
+) -> ConnectionResponse:
+    """
+    Get provider information and authorization status for a user.
+    """
+    try:
+        user = await user_service.get_user(user_id)
+
+        provider = await provider_service.get_by_name(provider_name)
+
+        if not provider:
+            raise NotFoundError("Provider not found")
+
+        authorization = await authorization_service.get_authorization(
+            provider_hash=provider.provider_hash,
+            user_hash=user.user_hash,
+        )
+
+        return ConnectionResponse(
+            provider_name=provider.provider_name,
+            provider_url=provider.provider_url,
+            is_authorized=(
+                authorization.status == ProviderAuthorizationStatus.APPROVED
+                if authorization
+                else False
+            ),
+            status=authorization.status if authorization else None,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to get provider for user_id=%d, provider=%s: %s",
+            user_id,
+            provider_name,
+            e,
+        )
         raise to_http_exception(e) from e
 
 

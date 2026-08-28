@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added admin endpoints to retrieve providers by name and owner ID.
+- Added admin endpoints to retrieve a user's providers and a specific provider's authorization status.
+
 ## [1.1.2] — 2026-08-26
 
 ### Added

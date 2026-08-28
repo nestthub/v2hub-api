@@ -16,8 +16,8 @@ import logging
 
 from fastapi import APIRouter, status
 
-from v2hub_api.api.dependencies import ProviderServiceDep
-from v2hub_api.core.exceptions import to_http_exception
+from v2hub_api.api.dependencies import ProviderServiceDep, UserServiceDep
+from v2hub_api.core.exceptions import NotFoundError, to_http_exception
 from v2hub_api.schemas.admin_models import (
     AllProvidersResponse,
     ProviderCreateRequest,
@@ -122,6 +122,93 @@ async def create_provider(
 
     except Exception as e:
         logger.error(f"Failed to create provider: {e}")
+        raise to_http_exception(e) from e
+
+
+@router.get(
+    "/name/{provider_name}",
+    status_code=status.HTTP_200_OK,
+    response_model=ProviderResponse,
+    summary="Get provider info by name",
+    description="Get provider id, hash and api-token by provider name.",
+)
+async def get_provider_by_name(
+    provider_name: str,
+    provider_service: ProviderServiceDep,
+    _signature: None = AdminSecurityDep,
+    _ip: None = InternalIPDep,
+) -> ProviderResponse:
+    """
+    Get provider account info by provider name.
+
+    Returns provider credentials.
+    """
+    try:
+        provider = await provider_service.get_by_name(provider_name)
+
+        if not provider:
+            raise NotFoundError("Provider not found")
+
+        return ProviderResponse(
+            provider_hash=provider.provider_hash,
+            owner_hash=provider.owner_hash,
+            provider_name=provider.provider_name,
+            api_token=provider.api_token,
+            provider_url=provider.provider_url,
+            is_active=provider.is_active,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to return provider by name=%s: %s",
+            provider_name,
+            e,
+        )
+        raise to_http_exception(e) from e
+
+
+@router.get(
+    "/owner/{owner_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=ProviderResponse,
+    summary="Get provider info by owner",
+    description="Get provider id, hash and api-token by owner id.",
+)
+async def get_provider_by_owner(
+    owner_id: int,
+    user_service: UserServiceDep,
+    provider_service: ProviderServiceDep,
+    _signature: None = AdminSecurityDep,
+    _ip: None = InternalIPDep,
+) -> ProviderResponse:
+    """
+    Get provider account info by owner ID.
+
+    Returns provider credentials.
+    """
+    try:
+        user = await user_service.get_user(owner_id)
+
+        provider = await provider_service.get_by_owner_hash(user.user_hash)
+
+        if not provider:
+            raise NotFoundError("Provider not found")
+
+        return ProviderResponse(
+            provider_hash=provider.provider_hash,
+            owner_hash=provider.owner_hash,
+            provider_name=provider.provider_name,
+            api_token=provider.api_token,
+            provider_url=provider.provider_url,
+            is_active=provider.is_active,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to return provider by owner_id=%d: %s",
+            owner_id,
+            e,
+        )
         raise to_http_exception(e) from e
 
 
