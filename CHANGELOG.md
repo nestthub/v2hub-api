@@ -9,8 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Added the project logo as a static SVG asset (`static/logo.svg`).
 - Added admin endpoints to retrieve providers by name and owner ID.
 - Added admin endpoints to retrieve a user's providers and a specific provider's authorization status.
+
+### Changed
+
+- Normalized the project name and user-facing references from `V2Hub` to `v2hub`.
+- API documentation is now hosted externally at `https://docs.v2hub.link`.
+
+### Removed
+
+- Removed the API documentation pages and documentation server:
+
+  - `docs/API_DOCUMENTATION.md`
+  - `docs/TYPES.md`
+  - `docs/index.html`
+  - `serve_docs.py`
 
 ## [1.1.2] — 2026-08-26
 

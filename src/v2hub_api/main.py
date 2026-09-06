@@ -54,14 +54,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ─── Static assets (landing page + docs site) ─────────────────────────────────
+# ─── Static assets (landing page) ─────────────────────────────────
 
 # main.py lives at <repo_root>/src/v2hub_api/main.py, both locally and
 # inside the Docker image (Dockerfile does `WORKDIR /app` + `COPY . .`),
 # so parents[2] resolves to <repo_root> in both environments.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOME_HTML_PATH = REPO_ROOT / "home.html"
-DOCS_DIR = REPO_ROOT / "docs"
 
 
 # ─── Prometheus metrics ───────────────────────────────────────────────────────
@@ -112,7 +111,6 @@ HTTP_EXCEPTIONS_TOTAL = Counter(
 # Порядок важен — более специфичные паттерны первыми
 PATH_PATTERNS = [
     (re.compile(r"^/sub/[^/]+$"), "/sub/{token}"),
-    (re.compile(r"^/site-docs(/.*)?$"), "/site-docs/*"),
     # ─── Subscriptions: provider-scoped (/providers/{user_id}/subs/...) ───
     (
         re.compile(r"^/api/v1/providers/[^/]+/subs/[^/]+/sources$"),
@@ -291,6 +289,7 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json" if settings.debug else None,
         lifespan=lifespan,
     )
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
     app.add_middleware(
         SecurityHeadersMiddleware,
@@ -344,35 +343,6 @@ def create_app() -> FastAPI:
                 content={"error": "not_found", "message": "Landing page is not available."},
             )
         return FileResponse(HOME_HTML_PATH, media_type="text/html")
-
-    README_PATH = REPO_ROOT / "README.md"
-
-    @app.get("/site-docs/README.md", include_in_schema=False)
-    async def site_docs_readme() -> Response:
-        """
-        Serve the repository's README.md under /site-docs/.
-
-        docs/index.html fetches README.md, API_DOCUMENTATION.md, and
-        TYPES.md as sibling files (relative fetch()), but only the latter
-        two actually live in docs/ — README.md lives at the repo root.
-        This route bridges that gap without needing to duplicate the file.
-        """
-        if not README_PATH.is_file():
-            return JSONResponse(
-                status_code=status.HTTP_404_NOT_FOUND,
-                content={"error": "not_found", "message": "README.md is not available."},
-            )
-        return FileResponse(README_PATH, media_type="text/markdown")
-
-    # Serve docs/ (project documentation site, e.g. docs/index.html linked
-    # from the landing page) as static files at /site-docs. Mounted under a
-    # dedicated path — not /docs — so it never collides with the Scalar API
-    # reference registered at /docs when settings.debug is enabled.
-    #
-    # NOTE: registered after the /site-docs/README.md route above, so that
-    # explicit route takes precedence over this catch-all mount.
-    if DOCS_DIR.is_dir():
-        app.mount("/site-docs", StaticFiles(directory=DOCS_DIR, html=True), name="site-docs")
 
     @app.get("/health")
     async def health() -> JSONResponse:

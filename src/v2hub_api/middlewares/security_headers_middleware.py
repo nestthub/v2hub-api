@@ -9,13 +9,12 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.types import ASGIApp
 
-# Paths that serve actual HTML pages (landing page + docs site) rather than
+# Paths that serve actual HTML pages (landing page) rather than
 # JSON API responses. These need a CSP that allows the external CDN scripts/
 # fonts and inline event handlers those pages use — the strict
 # "default-src 'none'" API policy would (and did) break them completely:
 # every <script>, onclick=, external stylesheet, and even favicon request
 # gets silently blocked by the browser under that policy.
-_HTML_PAGE_PREFIXES = ("/site-docs",)
 _HTML_PAGE_EXACT_PATHS = ("/",)
 
 _API_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
@@ -35,9 +34,7 @@ _HTML_CSP = (
 
 def _is_html_page(path: str) -> bool:
     """Check whether a request path serves an HTML page rather than the API."""
-    if path in _HTML_PAGE_EXACT_PATHS:
-        return True
-    return any(path.startswith(prefix) for prefix in _HTML_PAGE_PREFIXES)
+    return path in _HTML_PAGE_EXACT_PATHS
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -51,7 +48,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     - Strict-Transport-Security: Force HTTPS
     - Content-Security-Policy: Restrict resource loading (strict for the
       API, relaxed — but still locked down beyond 'self' plus a couple of
-      explicitly trusted CDNs — for the landing page / docs site)
+      explicitly trusted CDNs — for the landing page)
     - Referrer-Policy: Control referrer information
     - Permissions-Policy: Control browser features
     """
@@ -122,7 +119,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             if _is_html_page(request.url.path):
                 # Relaxed CSP for HTML pages that load external CDN
                 # scripts/fonts and use inline <script>/onclick handlers
-                # (home.html, docs/index.html served under /site-docs).
+                # (home.html).
                 response.headers["Content-Security-Policy"] = _HTML_CSP
             else:
                 # Strict CSP for the JSON API (no inline scripts, no

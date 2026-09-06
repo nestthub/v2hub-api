@@ -51,15 +51,15 @@ _BLOCKED_METADATA_IPS = {
     ipaddress.ip_address("fd00:ec2::254"),  # AWS IPv6 metadata
 }
 
-# Allowed Content-Type для подписок (только текст)
+# Allowed Content-Types for subscriptions (text only).
 _ALLOWED_CONTENT_TYPES = {
     "text/plain",
     "text/html",
-    "application/octet-stream",  # Многие сервисы отдают подписки как binary
+    "application/octet-stream",  # Some services return subscriptions as binary
     "application/x-www-form-urlencoded",
 }
 
-# Executable file signatures (magic bytes)
+# Executable file signatures (magic bytes).
 _EXECUTABLE_SIGNATURES = [
     b"MZ",  # PE executable (Windows .exe/.dll)
     b"\x7fELF",  # ELF executable (Linux)
@@ -72,7 +72,7 @@ _EXECUTABLE_SIGNATURES = [
     b"vbscript:",  # VBScript URI
 ]
 
-# Подозрительные паттерны в контенте
+# Suspicious content patterns.
 _MALICIOUS_PATTERNS = [
     re.compile(rb"<script[^>]*>", re.IGNORECASE),  # JavaScript
     re.compile(rb"javascript:", re.IGNORECASE),
@@ -83,14 +83,14 @@ _MALICIOUS_PATTERNS = [
     re.compile(rb"exec\s*\(", re.IGNORECASE),
     re.compile(rb"system\s*\(", re.IGNORECASE),
     re.compile(rb"__import__", re.IGNORECASE),
-    # SQL injection patterns
+    # SQL injection patterns.
     re.compile(rb"union\s+select", re.IGNORECASE),
     re.compile(rb"drop\s+table", re.IGNORECASE),
-    # Command injection
+    # Command injection patterns.
     re.compile(rb";\s*(rm|del|format|mkfs)", re.IGNORECASE),
 ]
 
-# Максимальное количество строк (защита от billion laughs attack)
+# Maximum number of lines (protection against billion laughs-style DoS).
 _MAX_LINES = 50000
 
 
@@ -121,7 +121,7 @@ class _GuardedResolver(AbstractResolver):
                 reason="Blocked hostname",
             )
 
-        # First resolution.
+        # First DNS resolution.
         infos_1: list[
             tuple[
                 socket.AddressFamily,
@@ -147,7 +147,7 @@ class _GuardedResolver(AbstractResolver):
 
         self._client._validate_resolved_ips(normalized_host, ips_1)
 
-        # Second resolution to detect obvious rebinding / instability.
+        # Second DNS resolution to detect obvious rebinding / instability.
         infos_2 = await asyncio.to_thread(
             socket.getaddrinfo,
             normalized_host,
@@ -357,7 +357,7 @@ class SubscriptionHTTPClient:
 
     def _check_executable_signature(self, content: bytes, url: str) -> None:
         """
-        Проверка на magic bytes исполняемых файлов.
+        Check content for executable file signatures (magic bytes).
         """
         if len(content) < 4:
             return
@@ -371,10 +371,10 @@ class SubscriptionHTTPClient:
 
     def _check_malicious_patterns(self, content: bytes, url: str) -> None:
         """
-        Проверка на вредоносные паттерны в контенте.
+        Check content for potentially malicious patterns.
         """
-        # Проверяем первые N байт для производительности
-        check_size = min(len(content), 100000)  # 100KB
+        # Check only the first N bytes for performance.
+        check_size = min(len(content), 100000)  # 100 KB
         sample = content[:check_size]
 
         for pattern in _MALICIOUS_PATTERNS:
@@ -391,8 +391,8 @@ class SubscriptionHTTPClient:
 
     def _validate_content_structure(self, content: str, url: str) -> None:
         """
-        Валидация структуры контента.
-        Защита от billion laughs attack и других DoS атак.
+        Validate the content structure.
+        Protects against billion laughs-style attacks and other DoS attacks.
         """
         lines = content.split("\n")
 
@@ -402,11 +402,11 @@ class SubscriptionHTTPClient:
                 reason=f"Too many lines (> {_MAX_LINES}), possible DoS attack",
             )
 
-        # Проверка на чрезмерное повторение (защита от compression bombs)
+        # Check for excessive repetition (protection against compression bombs).
         if len(content) > 1000:
-            # Проверяем ratio уникальных символов
+            # Check the ratio of unique characters.
             unique_chars = len(set(content[:10000]))
-            if unique_chars < 10:  # Слишком мало уникальных символов
+            if unique_chars < 10:  # Too few unique characters.
                 raise ExternalFetchError(
                     url=url,
                     reason="Suspicious content pattern detected",
@@ -414,13 +414,13 @@ class SubscriptionHTTPClient:
 
     def _sanitize_content(self, content: str) -> str:
         """
-        Санитизация контента перед возвратом.
-        Удаляет потенциально опасные элементы.
+        Sanitize content before returning it.
+        Removes potentially dangerous elements.
         """
-        # Удаляем null bytes
+        # Remove null bytes.
         content = content.replace("\x00", "")
 
-        # Удаляем control characters (кроме \n, \r, \t)
+        # Remove control characters (except \n, \r, \t).
         content = "".join(char for char in content if char in "\n\r\t" or not (0 <= ord(char) < 32))
 
         return content.strip()
@@ -471,7 +471,7 @@ class SubscriptionHTTPClient:
         async with session.get(
             url, allow_redirects=False, timeout=aiohttp.ClientTimeout(total=self.timeout)
         ) as response:
-            # Сначала проверяем статус — редиректы и ошибки не имеют осмысленного тела
+            # Check the status first — redirects and error responses do not have a meaningful body.
             if response.status in {301, 302, 303, 307, 308}:
                 location = response.headers.get("Location")
                 return response.status, location, response.headers, ""
@@ -479,7 +479,7 @@ class SubscriptionHTTPClient:
             if response.status != 200:
                 return response.status, None, response.headers, ""
 
-            # Валидируем заголовки только для успешных ответов с телом
+            # Validate headers only for successful responses with a body.
             self._validate_content_type(response.headers, url)
             self._validate_content_encoding(response.headers, url)
 
@@ -498,17 +498,17 @@ class SubscriptionHTTPClient:
 
             raw = b"".join(chunks)
 
-            # Проверка на executable content
+            # Check for executable content.
             self._check_executable_signature(raw, url)
 
-            # Проверка на вредоносные паттерны
+            # Check for malicious patterns.
             self._check_malicious_patterns(raw, url)
 
-            # Декодирование с валидацией
+            # Decode with validation.
             try:
                 text = raw.decode("utf-8", errors="strict")
             except UnicodeDecodeError:
-                # Пробуем другие кодировки
+                # Try other encodings.
                 for encoding in ["latin-1", "cp1252", "iso-8859-1"]:
                     try:
                         text = raw.decode(encoding, errors="strict")
@@ -517,14 +517,14 @@ class SubscriptionHTTPClient:
                     except UnicodeDecodeError:
                         continue
                 else:
-                    # Если ничего не подошло, используем replace
+                    # If none work, use replacement characters.
                     text = raw.decode("utf-8", errors="replace")
                     logger.warning("Used UTF-8 with errors='replace' for %s", url)
 
-            # Валидация структуры контента
+            # Validate content structure.
             self._validate_content_structure(text, url)
 
-            # Санитизация
+            # Sanitize content.
             text = self._sanitize_content(text)
 
             return response.status, None, response.headers, text
@@ -551,7 +551,7 @@ class SubscriptionHTTPClient:
 
                 status, _, _, body = await self._fetch_once(session, current_url)
 
-                # --- HTTP логика ---
+                # --- HTTP logic ---
                 if status in {301, 302, 303, 307, 308}:
                     raise ExternalFetchError(
                         url=url,
@@ -576,7 +576,7 @@ class SubscriptionHTTPClient:
 
                 return content
 
-            # --- RETRY: сетевые ошибки и разрыв соединения ---
+            # --- RETRY: network errors and connection failures ---
             except (
                 TimeoutError,
                 aiohttp.ClientConnectorError,

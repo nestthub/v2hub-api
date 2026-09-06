@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "v2hub-api"
 version = "1.1.2"
-description = "API backend for V2Hub subscription management"
+description = "API backend for v2hub subscription management"
 readme = "README.md"
 license = { text = "MIT" }
 

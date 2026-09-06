@@ -4,9 +4,9 @@
 
 A production-ready FastAPI-based service for managing, aggregating, and serving VPN proxy subscriptions with multi-source support, intelligent caching, and comprehensive security features.
 
-### 🌐 Part of the [V2Hub Ecosystem](https://github.com/nestthub/nestthub/blob/main/ecosystems/v2hub/README.md)
+### 🌐 Part of the [v2hub Ecosystem](https://github.com/nestthub/nestthub/blob/main/ecosystems/v2hub/README.md)
 
-This package is one component of V2Hub — see the full project overview, architecture, and all related repositories.
+This package is one component of v2hub — see the full project overview, architecture, and all related repositories.
 
 ---
 
@@ -215,12 +215,7 @@ v2hub-api/
 │   └── workflows/
 │       ├── ci.yml                       # Lint, type-check, tests, Docker build
 │       └── deploy.yml                   # SSH deploy + migrations + health check
-├── docs/
-│   ├── API_DOCUMENTATION.md             # Complete API reference
-│   ├── TYPES.md                         # Type reference
-│   └── index.html
 ├── tests/                                # Test suite
-├── serve_docs.py                         # Local docs server
 ├── docker-compose.yml                    # Docker orchestration
 ├── Dockerfile                            # Container definition
 ├── pyproject.toml                        # Project dependencies
@@ -458,17 +453,11 @@ LOG_FORMAT=%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 ## 📚 API Documentation
 
-Comprehensive API documentation is available in [docs/API_DOCUMENTATION.md](./docs/API_DOCUMENTATION.md), with additional type reference in [docs/TYPES.md](./docs/TYPES.md).
-
-A static rendering of the docs can also be served locally:
-
-```bash
-python serve_docs.py
-```
+Comprehensive API documentation is available in [docs.v2hub.link](https://docs.v2hub.link).
 
 ### Quick Reference
 
-**Base URL**: `https://api.example.com`
+**Base URL**: `https://v2hub.link`
 
 #### Public Endpoints
 
@@ -647,7 +636,7 @@ curl -X POST http://localhost/api/v1/providers/12345/revoke \
   -H "API-Token: a1B2c3D4e5F6g7H8i9J0"
 ```
 
-See [docs/API_DOCUMENTATION.md](./docs/API_DOCUMENTATION.md#provider-api) for the full Provider API reference.
+See [docs.v2hub.link](https://docs.v2hub.link/api/provider-api) for the full Provider API reference.
 
 ### Python Client Example
 
@@ -1138,7 +1127,7 @@ Built with:
 
 ## 📞 Support
 
-- **Documentation**: [docs/API_DOCUMENTATION.md](./docs/API_DOCUMENTATION.md)
+- **Documentation**: [docs.v2hub.link](https://docs.v2hub.link)
 - **Issues**: [GitHub Issues](https://github.com/nestthub/v2hub-api/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/nestthub/v2hub-api/discussions)
 
