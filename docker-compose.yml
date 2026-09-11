@@ -78,6 +78,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d.templates:/etc/nginx/templates:ro
       - ./nginx/entrypoint/10-generate-limit-key-map.sh:/docker-entrypoint.d/10-generate-limit-key-map.sh:ro
+      - ./nginx/entrypoint/20-grafana-config.sh:/docker-entrypoint.d/20-grafana-config.sh:ro
       - ./nginx/grafana.htpasswd:/etc/nginx/grafana.htpasswd:ro
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt
@@ -98,68 +99,76 @@ services:
     networks:
       - frontend
 
-      #  alloy:
-      #    image: grafana/alloy:latest
-      #    restart: unless-stopped
-      #    expose:
-      #      - "12345"
-      #    volumes:
-      #      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy
-      #      - /var/run/docker.sock:/var/run/docker.sock # Docker API для дискавери
-      #    command:
-      #      - run
-      #      - /etc/alloy/config.alloy
-      #      - --server.http.listen-addr=0.0.0.0:12345 # включаем UI
-      #      - --stability.level=generally-available
-      #    privileged: true # нужно для чтения Docker сокета
-      #    networks:
-      #      - monitoring
-      #
-      #  loki:
-      #    image: grafana/loki:latest
-      #    restart: unless-stopped
-      #    expose:
-      #      - "3100"
-      #    volumes:
-      #      - ./monitoring/loki.yml:/etc/loki/local-config.yaml
-      #      - lokidata:/loki
-      #    networks:
-      #      - monitoring
-      #
-      #  prometheus:
-      #    image: prom/prometheus:latest
-      #    restart: unless-stopped
-      #    expose:
-      #      - "9090"
-      #    volumes:
-      #      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      #      - prometheusdata:/prometheus
-      #    networks:
-      #      - monitoring
-      #
-      #  grafana:
-      #    image: grafana/grafana:latest
-      #    restart: unless-stopped
-      #    expose:
-      #      - "3000"
-      #    environment:
-      #      - GF_SECURITY_ADMIN_USER=admin
-      #      - GF_SECURITY_ADMIN_PASSWORD=admin
-      #      - GF_SERVER_ROOT_URL=https://${DOMAIN}/grafana/
-      #      - GF_SERVER_SERVE_FROM_SUB_PATH=true
-      #    volumes:
-      #      - ./monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml
-      #      - grafanadata:/var/lib/grafana
-      #    networks:
-      #      - frontend
-      #      - monitoring
+  alloy:
+    profiles:
+      - enabled
+    image: grafana/alloy:latest
+    restart: unless-stopped
+    expose:
+      - "12345"
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy
+      - /var/run/docker.sock:/var/run/docker.sock # Docker API для дискавери
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345 # включаем UI
+      - --stability.level=generally-available
+    privileged: true # нужно для чтения Docker сокета
+    networks:
+      - monitoring
+
+  loki:
+    profiles:
+      - enabled
+    image: grafana/loki:latest
+    restart: unless-stopped
+    expose:
+      - "3100"
+    volumes:
+      - ./monitoring/loki.yml:/etc/loki/local-config.yaml
+      - lokidata:/loki
+    networks:
+      - monitoring
+
+  prometheus:
+    profiles:
+      - enabled
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    expose:
+      - "9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheusdata:/prometheus
+    networks:
+      - monitoring
+
+  grafana:
+    profiles:
+      - enabled
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_ROOT_URL=https://${DOMAIN}/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - ./monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - grafanadata:/var/lib/grafana
+    networks:
+      - frontend
+      - monitoring
 
 volumes:
   postgres_data:
   redis_data:
-    #  grafanadata:
-    #  prometheusdata:
-    #  lokidata:
+  grafanadata:
+  prometheusdata:
+  lokidata:
 
 networks:
   backend:

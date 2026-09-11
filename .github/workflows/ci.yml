@@ -140,12 +140,80 @@ jobs:
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
+  monitoring-config:
+    name: Monitoring configuration validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate disabled profile
+        env:
+          MONITORING_PROFILE: disabled
+          COMPOSE_PROFILES: disabled
+        run: |
+          services="$(docker compose config --services)"
+
+          echo "$services"
+
+          for service in alloy loki prometheus grafana; do
+            if echo "$services" | grep -qx "$service"; then
+              echo "ERROR: $service should not be included when monitoring is disabled."
+              exit 1
+            fi
+          done
+
+      - name: Validate enabled profile
+        env:
+          MONITORING_PROFILE: enabled
+          COMPOSE_PROFILES: enabled
+        run: |
+          services="$(docker compose config --services)"
+
+          echo "$services"
+
+          for service in alloy loki prometheus grafana; do
+            if ! echo "$services" | grep -qx "$service"; then
+              echo "ERROR: $service should be included when monitoring is enabled."
+              exit 1
+            fi
+          done
+
+      - name: Validate Nginx routing - enabled
+        run: |
+          docker run --rm \
+            --entrypoint /bin/sh \
+            --env MONITORING_PROFILE=enabled \
+            -v "$PWD/nginx/entrypoint/20-grafana-config.sh:/tmp/grafana-config.sh:ro" \
+            nginx:1.25-alpine \
+            -c 'mkdir -p /etc/nginx/snippets && cp /tmp/grafana-config.sh /tmp/test.sh && chmod +x /tmp/test.sh && /tmp/test.sh && grep -q "proxy_pass http://grafana:3000;" /etc/nginx/snippets/grafana.conf'
+
+      - name: Validate Nginx routing - disabled
+        run: |
+          docker run --rm \
+            --entrypoint /bin/sh \
+            --env MONITORING_PROFILE=disabled \
+            -v "$PWD/nginx/entrypoint/20-grafana-config.sh:/tmp/grafana-config.sh:ro" \
+            nginx:1.25-alpine \
+            -c 'mkdir -p /etc/nginx/snippets && cp /tmp/grafana-config.sh /tmp/test.sh && chmod +x /tmp/test.sh && /tmp/test.sh && grep -q "return 404;" /etc/nginx/snippets/grafana.conf'
+
+      - name: Validate Nginx routing - enabled without grafana
+        run: |
+          docker run --rm \
+            --entrypoint /bin/sh \
+            --env MONITORING_PROFILE=enabled \
+            -v "$PWD/nginx/entrypoint/20-grafana-config.sh:/tmp/grafana-config.sh:ro" \
+            nginx:1.25-alpine \
+            -c 'mkdir -p /etc/nginx/snippets && cp /tmp/grafana-config.sh /tmp/test.sh && chmod +x /tmp/test.sh && /tmp/test.sh && grep -q "proxy_pass http://grafana:3000;" /etc/nginx/snippets/grafana.conf'
+
   ci-success:
     name: CI success
     runs-on: ubuntu-latest
     needs:
       - test
       - docker-build
+      - monitoring-config
     if: always()
 
     steps:
