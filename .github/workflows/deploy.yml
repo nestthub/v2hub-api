@@ -117,14 +117,7 @@ jobs:
           docker compose run --rm --no-deps api alembic upgrade head < /dev/null
 
           echo "=== Starting application ==="
-          if [ "${MONITORING_PROFILE:-disabled}" = "disabled" ]; then
-            docker compose rm -sf grafana prometheus loki alloy || true
-          fi
-
           docker compose up -d --force-recreate < /dev/null
-
-          echo "Active services:"
-          docker compose config --services
 
           echo "=== Checking api directly (bypassing nginx) before restarting nginx ==="
           api_ready=0

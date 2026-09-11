@@ -207,8 +207,7 @@ v2hub-api/
 │   ├── conf-test.d/
 │   │   └── api.conf                     # Domain-free config for local testing
 │   ├── entrypoint/
-│   │   ├── 10-generate-limit-key-map.sh # Builds the rate-limit exemption map
-│   │   └── 20-grafana-config.sh         # Builds /grafana/ routing based on MONITORING_PROFILE
+│   │   └── 10-generate-limit-key-map.sh # Builds the rate-limit exemption map
 │   └── grafana.htpasswd                 # Basic auth for /grafana/ (optional)
 ├── certbot-renew/
 │   └── Dockerfile                       # SSL certificate renewal
@@ -432,32 +431,23 @@ CORS_HEADERS=["*"]
 # ─────────────────────────────
 LOG_LEVEL=INFO
 LOG_FORMAT=%(asctime)s - %(name)s - %(levelname)s - %(message)s
-
-# ─────────────────────────────
-# Monitoring
-# ─────────────────────────────
-# enabled  → start monitoring services and expose /grafana/
-# disabled → do not start monitoring services and /grafana/ returns 404
-MONITORING_PROFILE=disabled
-COMPOSE_PROFILES=${MONITORING_PROFILE}
 ```
 
 ### Configuration Reference
 
-| Category        | Variable                       | Default  | Description                                                                                                                     |
-| --------------- | ------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Limits**      | `MAX_SUBSCRIPTIONS_PER_USER`   | 3        | Max subscriptions per user                                                                                                      |
-|                 | `MAX_SOURCES_PER_SUBSCRIPTION` | 150      | Max sources per subscription                                                                                                    |
-|                 | `MAX_CONFIGS_PER_SUBSCRIPTION` | 150      | Max resolved configs                                                                                                            |
-|                 | `MAX_NESTING_DEPTH`            | 3        | Max depth for nested references                                                                                                 |
-| **Performance** | `DB_POOL_SIZE`                 | 10       | Database connection pool size                                                                                                   |
-|                 | `REDIS_TTL`                    | 600      | Cache TTL in seconds                                                                                                            |
-|                 | `FETCH_TIMEOUT`                | 3        | HTTP fetch timeout (seconds)                                                                                                    |
-| **Security**    | `ADMIN_ALLOWED_IPS`            | -        | Comma-separated IP whitelist                                                                                                    |
-| **Rate Limits** | `PUBLIC_RPS`                   | 3        | Requests/second for public endpoints                                                                                            |
-|                 | `INTERNAL_WITH_TOKEN_RPS`      | 3        | Requests/second for authenticated                                                                                               |
-|                 | `TRUSTED_NOLIMIT_IPS`          | -        | Comma-separated IPs exempt from nginx rate limiting                                                                             |
-| **Monitoring**  | `MONITORING_PROFILE`           | disabled | `enabled` starts Prometheus/Loki/Alloy/Grafana and exposes `/grafana/`; `disabled` excludes them and returns 404 at `/grafana/` |
+| Category        | Variable                       | Default | Description                                         |
+| --------------- | ------------------------------ | ------- | --------------------------------------------------- |
+| **Limits**      | `MAX_SUBSCRIPTIONS_PER_USER`   | 3       | Max subscriptions per user                          |
+|                 | `MAX_SOURCES_PER_SUBSCRIPTION` | 150     | Max sources per subscription                        |
+|                 | `MAX_CONFIGS_PER_SUBSCRIPTION` | 150     | Max resolved configs                                |
+|                 | `MAX_NESTING_DEPTH`            | 3       | Max depth for nested references                     |
+| **Performance** | `DB_POOL_SIZE`                 | 10      | Database connection pool size                       |
+|                 | `REDIS_TTL`                    | 600     | Cache TTL in seconds                                |
+|                 | `FETCH_TIMEOUT`                | 3       | HTTP fetch timeout (seconds)                        |
+| **Security**    | `ADMIN_ALLOWED_IPS`            | -       | Comma-separated IP whitelist                        |
+| **Rate Limits** | `PUBLIC_RPS`                   | 3       | Requests/second for public endpoints                |
+|                 | `INTERNAL_WITH_TOKEN_RPS`      | 3       | Requests/second for authenticated                   |
+|                 | `TRUSTED_NOLIMIT_IPS`          | -       | Comma-separated IPs exempt from nginx rate limiting |
 
 ---
 
@@ -704,49 +694,6 @@ The monitoring stack runs as separate Docker services. All ports are internal �
 | Alloy      | `grafana/alloy`   | 12345         | Log collector (successor to Promtail) |
 | Grafana    | `grafana/grafana` | 3000          | Dashboards, exposed via nginx         |
 
-### Enabling / Disabling the Stack
-
-The monitoring stack is gated by a Docker Compose profile, controlled entirely
-through `.env` — no editing of `docker-compose.yml` or nginx config files is
-required:
-
-```bash
-# .env
-MONITORING_PROFILE=disabled   # default: services not started, /grafana/ → 404
-# MONITORING_PROFILE=enabled  # services started, /grafana/ proxies to Grafana
-
-COMPOSE_PROFILES=${MONITORING_PROFILE}
-```
-
-Apply a change with:
-
-```bash
-docker compose up -d --force-recreate
-```
-
-At container start, `nginx/entrypoint/20-grafana-config.sh` regenerates
-`/etc/nginx/snippets/grafana.conf`, which is included from the main server
-block, based on `MONITORING_PROFILE`:
-
-- **`enabled`** — proxies `/grafana/` to the `grafana` service, protected by
-  the Basic Auth layer described below, in addition to Grafana's own login.
-  The `alloy`, `loki`, `prometheus`, and `grafana` services are included in
-  `docker compose up`.
-- **`disabled`** — `/grafana/` returns `404`, and those four services are
-  excluded from `docker compose up` entirely (they won't be created or
-  started).
-
-To confirm which services are active:
-
-```bash
-docker compose config --services
-```
-
-> Switching the profile back to `disabled` stops and removes the monitoring
-> containers, but does **not** delete their volumes (`grafanadata`,
-> `prometheusdata`, `lokidata`) — dashboards and metrics history are
-> preserved if you re-enable monitoring later.
-
 ### Accessing Grafana
 
 Grafana is proxied through nginx at `/grafana/` and restricted by IP allowlist:
@@ -767,8 +714,6 @@ GF_SERVER_SERVE_FROM_SUB_PATH=true
 > Grafana's built-in login screen is used for authentication. The nginx IP allowlist acts as the outer perimeter — unauthorized IPs receive 403 before reaching Grafana at all.
 
 ### Setting Up Grafana Basic Auth (Optional)
-
-> Applies only when `MONITORING_PROFILE=enabled`.
 
 An additional Basic Auth layer can be added in nginx. It requires a password file inside the nginx container.
 
@@ -955,7 +900,6 @@ pre-commit run --all-files
 - [ ] Configure proper CORS origins (not `*`)
 - [ ] Set appropriate rate limits for your use case (`nginx/conf.d.templates/api.conf.template`)
 - [ ] Set a real `TRUSTED_NOLIMIT_IPS` if you have monitoring/health-check IPs that shouldn't be rate-limited
-- [ ] Decide on `MONITORING_PROFILE` (`enabled`/`disabled`) and, if enabled, set a strong Grafana admin password (don't rely on the docker-compose default)
 - [ ] Issue SSL certificates with certbot before first start (see below)
 - [ ] Set up `nginx/grafana.htpasswd` if the Grafana location is enabled
 - [ ] Configure backup strategy for PostgreSQL
@@ -976,10 +920,10 @@ The project ships a single `docker-compose.yml` covering the full stack — no s
 | `nginx`         | Reverse proxy, SSL termination, rate limiting           |
 | `certbot-renew` | Automatic Let's Encrypt certificate renewal (every 12h) |
 
-Monitoring services (Prometheus, Loki, Alloy, Grafana) are defined behind the `enabled` Compose profile — controlled by `MONITORING_PROFILE` in `.env` (see [Monitoring](#-monitoring)). They are excluded from `docker compose up` by default.
+Monitoring services (Prometheus, Loki, Alloy, Grafana) are present but commented out in `docker-compose.yml` — uncomment them if you want the full observability stack (see [Monitoring](#-monitoring)).
 
 ```bash
-# Start everything (monitoring included only if MONITORING_PROFILE=enabled)
+# Start everything
 docker compose up -d
 
 # Start only what you need locally (e.g. no nginx/certbot for local dev)
@@ -996,23 +940,19 @@ What you configure instead, in `.env`:
 DOMAIN=YOURDOMAIN.com
 # Comma-separated list of IPs exempt from rate limiting (optional)
 TRUSTED_NOLIMIT_IPS=1.1.1.1,2.2.2.2
-# Controls whether /grafana/ is proxied or returns 404 (see Monitoring section)
-MONITORING_PROFILE=disabled
 ```
 
 On container start:
 
 1. `nginx/entrypoint/10-generate-limit-key-map.sh` reads `TRUSTED_NOLIMIT_IPS` and generates `/etc/nginx/conf.d/00-limit-key-map.conf` (the `map $remote_addr $limit_key { ... }` block).
-2. `nginx/entrypoint/20-grafana-config.sh` reads `MONITORING_PROFILE` and generates `/etc/nginx/snippets/grafana.conf`, which the main server block `include`s at `/grafana/` — either a full proxy to the `grafana` service (with Basic Auth) or a `return 404;`.
-3. Nginx's built-in entrypoint renders every `*.template` file in `nginx/conf.d.templates/` into `/etc/nginx/conf.d/`, substituting `${DOMAIN}` with the real value from your `.env`.
-4. Nginx starts with the fully rendered config.
+2. Nginx's built-in entrypoint renders every `*.template` file in `nginx/conf.d.templates/` into `/etc/nginx/conf.d/`, substituting `${DOMAIN}` with the real value from your `.env`.
+3. Nginx starts with the fully rendered config.
 
 To inspect what was generated inside a running container:
 
 ```bash
 docker compose exec nginx cat /etc/nginx/conf.d/api.conf
 docker compose exec nginx cat /etc/nginx/conf.d/00-limit-key-map.conf
-docker compose exec nginx cat /etc/nginx/snippets/grafana.conf
 ```
 
 There's also `nginx/conf-test.d/api.conf` — a minimal, domain-free config (no SSL, `server_name localhost`) for quick local testing without certificates.
@@ -1074,8 +1014,8 @@ curl http://localhost/health
 
 GitHub Actions workflows live under `.github/workflows/`:
 
-- **`ci.yml`** — runs on every push/PR to `main`. Spins up Postgres and Redis service containers, lints with `ruff`, type-checks with `mypy`, applies Alembic migrations, runs the test suite, validates that the Docker image builds, and validates the `MONITORING_PROFILE` Compose profile and nginx routing (both `enabled` and `disabled`).
-- **`deploy.yml`** — triggered automatically after a successful CI run on `main` (or manually via `workflow_dispatch`). SSHes into the production server, pulls the latest code, rebuilds and recreates containers (removing monitoring containers first if `MONITORING_PROFILE=disabled`), **runs `alembic upgrade head` inside the `api` container**, reloads nginx, and polls `/health` until it returns `200`.
+- **`ci.yml`** — runs on every push/PR to `main`. Spins up Postgres and Redis service containers, lints with `ruff`, type-checks with `mypy`, applies Alembic migrations, runs the test suite, and validates that the Docker image builds.
+- **`deploy.yml`** — triggered automatically after a successful CI run on `main` (or manually via `workflow_dispatch`). SSHes into the production server, pulls the latest code, rebuilds and recreates containers, **runs `alembic upgrade head` inside the `api` container**, reloads nginx, and polls `/health` until it returns `200`.
 
 Required repository secrets for deployment: `HOST`, `PORT`, `USER`, `SSH_KEY`.
 
@@ -1132,7 +1072,7 @@ Automatically applied in production:
 
 - All monitoring ports (Prometheus :9090, Loki :3100, Alloy :12345, Grafana :3000) are **internal only** — declared with `expose`, not `ports`
 - `/metrics` endpoint is blocked externally via `deny all` in nginx
-- Grafana access is restricted by IP allowlist in nginx, and is only reachable at all when `MONITORING_PROFILE=enabled`
+- Grafana access is restricted by IP allowlist in nginx
 
 ---
 
