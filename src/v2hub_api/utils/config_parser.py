@@ -186,8 +186,11 @@ def decode_base64_subscription(content: str) -> str:
         decoded_bytes = base64.b64decode(padded, validate=True)
         decoded = decoded_bytes.decode("utf-8")
 
-        # Only accept if it looks like subscription content
-        if any(proto.value + "://" in decoded for proto in ProxyProtocol):
+        # Only accept if it looks like subscription content.
+        # known_uri_schemes() includes alias schemes (e.g. "hy2") as well
+        # as canonical ones, so a subscription made up entirely of
+        # aliased-scheme lines isn't wrongly rejected here.
+        if any(scheme + "://" in decoded for scheme in ProxyProtocol.known_uri_schemes()):
             return decoded
 
     except Exception:

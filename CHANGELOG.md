@@ -12,11 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Added the project logo as a static SVG asset (`static/logo.svg`).
 - Added admin endpoints to retrieve providers by name and owner ID.
 - Added admin endpoints to retrieve a user's providers and a specific provider's authorization status.
+- Added support for the `hy2://` URI scheme as an alias for `hysteria2://`. Sources using either scheme are recognized and parsed identically, and are always stored and re-serialized under the canonical `hysteria2` protocol value.
+- Added `ProxyProtocol.known_uri_schemes()`, returning every recognized proxy URI scheme (canonical values and aliases such as `hy2`).
 
 ### Changed
 
 - Normalized the project name and user-facing references from `V2Hub` to `v2hub`.
 - API documentation is now hosted externally at `https://docs.v2hub.link`.
+
+### Fixed
+
+- Fixed the base64 subscription-content detection heuristic incorrectly rejecting subscriptions made up entirely of aliased-scheme sources (e.g. all-`hy2://` content), since it checked only canonical `ProxyProtocol` values rather than every recognized scheme.
 
 ### Removed
 

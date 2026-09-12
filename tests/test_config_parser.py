@@ -169,6 +169,14 @@ class TestDecodeBase64Subscription:
         encoded = base64.b64encode(random_text.encode()).decode()
         assert decode_base64_subscription(encoded) == encoded
 
+    def test_decodes_subscription_made_entirely_of_hy2_aliased_scheme(self):
+        # Regression test: a subscription whose lines all use the hy2://
+        # alias (rather than the canonical hysteria2://) must still be
+        # recognized as subscription content and decoded, not rejected.
+        original = "hy2://password@host:443?insecure=1#name1\nhy2://password2@host2:443\n"
+        encoded = base64.b64encode(original.encode()).decode()
+        assert decode_base64_subscription(encoded) == original
+
 
 class TestParseSubscriptionContent:
     def test_parses_plain_newline_separated_configs(self):
