@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Fixed the base64 subscription-content detection heuristic incorrectly rejecting subscriptions made up entirely of aliased-scheme sources (e.g. all-`hy2://` content), since it checked only canonical `ProxyProtocol` values rather than every recognized scheme.
+- Fixed proxy configuration URIs being incorrectly classified as internal tokens when their hostname matched the configured domain. Proxy URI detection now takes precedence over internal token detection.
 
 ### Removed
 

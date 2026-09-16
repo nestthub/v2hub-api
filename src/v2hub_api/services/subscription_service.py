@@ -840,16 +840,17 @@ class SubscriptionService:
 
     async def _detect_source_type(self, source: str) -> SourceType:
         """Detect the type of source."""
+
+        # Check if it's a valid proxy config
+        if is_valid_proxy_uri(source):
+            return SourceType.CONFIG
+
         if is_internal(source, settings.domain):
             return SourceType.INTERNAL_TOKEN
         # Check if it's an HTTP URL
         if is_http_url(source):
             self._http_client.validate_url_static(source)
             return SourceType.EXTERNAL_URL
-
-        # Check if it's a valid proxy config
-        if is_valid_proxy_uri(source):
-            return SourceType.CONFIG
 
         raise InvalidConfigError(source)
 
