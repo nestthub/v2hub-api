@@ -8,17 +8,35 @@ Key features:
 - Enforces depth and config count limits
 - Returns fully resolved configs ready for client consumption
 
-Performance:
-- Sources within a subscription are fetched concurrently (I/O: cache reads,
-  DB lookups for nested subscriptions/comments). Only the actual mutation of
-  the shared `ResolveResult` (append/dedup/limit-check) happens sequentially,
-  in the original source order, so dedup/truncation semantics are unchanged.
+Performance & ordering:
+- All I/O for a subscription's eligible sources — EXTERNAL_URL fetches and
+  INTERNAL_TOKEN comment-map lookups — is kicked off together and awaited
+  concurrently via a single `asyncio.gather`. CONFIG sources need no I/O.
+- Once every outcome is available, sources are applied to the shared
+  `ResolveResult` in a single sequential pass ordered by `order_index`, so
+  the final `configs` list reflects the user-defined order regardless of
+  source type. Only this apply phase mutates shared state, and it does so
+  strictly in order, preserving dedup/limit/truncation semantics exactly as
+  if everything had been processed one source at a time.
+- Trade-off: this maximizes concurrency by fetching every eligible
+  EXTERNAL_URL/INTERNAL_TOKEN source up front, even ones that will end up
+  unused because an earlier source (in order_index order) hits max_configs
+  first. In practice max_configs is rarely the limiting factor, so the extra
+  cache/DB calls are cheap relative to the gain from full concurrency; if a
+  subscription is expected to hit the limit far before exhausting its
+  sources, that's the one scenario where this does more I/O than strictly
+  necessary.
+- All per-source fetch helpers swallow their own exceptions and return an
+  outcome with `.error` set; `asyncio.gather(..., return_exceptions=True)` is
+  additionally used as defense in depth so one failing source can never abort
+  or block its siblings.
 """
 
 import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +52,9 @@ from v2hub_api.db.repositories.external_cache_repository import ExternalCacheRep
 from v2hub_api.schemas import ResolvedConfig
 from v2hub_api.services.cache_service import CacheService
 from v2hub_api.utils.config_parser import get_config_hash, parse_subscription_content
+
+if TYPE_CHECKING:
+    from collections.abc import Coroutine
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +106,10 @@ class ResolverService:
     Limits enforced:
     - max_nesting_depth: Maximum recursion depth
     - max_configs_per_subscription: Maximum total configs
+
+    Output order:
+    - `result.configs` follows each source's `order_index`, regardless of
+      whether it's a CONFIG, EXTERNAL_URL, or INTERNAL_TOKEN source.
     """
 
     def __init__(
@@ -186,101 +211,110 @@ class ResolverService:
         if subscription.description and result.description == settings.domain:
             result.description = subscription.description
 
-        # Filter sources that would even be eligible (cheap, sync checks) while
-        # preserving original order — depth/hidden checks don't touch shared
-        # mutable state so they're safe to do up front.
-        eligible_sources = [
-            source
-            for source in subscription.sources
-            if not (source.max_depth < depth) and not (depth == 0 and source.is_hidden)
-        ]
+        # Filter eligible sources (cheap, sync checks), sorted by `order_index`
+        # so the final apply pass preserves the user-defined order across all
+        # source types.
+        eligible_sources = sorted(
+            (
+                source
+                for source in subscription.sources
+                if not (source.max_depth < depth) and not (depth == 0 and source.is_hidden)
+            ),
+            key=lambda s: s.order_index,
+        )
 
-        # Split by type: CONFIG sources are pure in-memory work (no I/O), so
-        # handle them immediately. EXTERNAL_URL / INTERNAL_TOKEN involve I/O
-        # (cache reads, DB queries) and are fetched concurrently below.
-        config_sources: list[Source] = []
-        external_sources: list[Source] = []
-        internal_sources: list[Source] = []
+        if not eligible_sources:
+            return
+
+        external_sources = []
+        internal_sources = []
 
         for source in eligible_sources:
-            if len(result.configs) >= self.max_configs:
-                result.truncated = True
-                return
-            if source.source_type == SourceType.CONFIG.value:
-                config_sources.append(source)
-            elif source.source_type == SourceType.EXTERNAL_URL.value:
+            if source.source_type == SourceType.EXTERNAL_URL.value:
                 external_sources.append(source)
             elif source.source_type == SourceType.INTERNAL_TOKEN.value:
                 internal_sources.append(source)
 
-        # CONFIG sources: cheap, sequential (no I/O, must respect limits/order)
-        for source in config_sources:
+        # ------------------------------------------------------------
+        # I/O phase: fetch every EXTERNAL_URL and INTERNAL_TOKEN source's
+        # data concurrently, in one shot. None of this touches `result`, so
+        # it's safe to fully parallelize regardless of source type or
+        # position in `order_index`.
+        # ------------------------------------------------------------
+        outcomes_by_id: dict[str, _ExternalFetchOutcome | _InternalFetchOutcome] = {}
+
+        if external_sources or internal_sources:
+            now = utcnow()
+            cooldown = timedelta(seconds=settings.refresh_cooldown)
+
+            external_update_date: dict[str, datetime] = {}
+            if external_sources:
+                external_update_date = {
+                    data.url_hash: data.updated_at
+                    for data in await self.external_repo.get_all_by_field(
+                        self.external_repo.model.url_hash,
+                        [source.external_url for source in external_sources],
+                    )
+                }
+
+            fetch_coros: list[
+                Coroutine[Any, Any, _ExternalFetchOutcome | _InternalFetchOutcome]
+            ] = []
+            for source in external_sources:
+                updated_at = external_update_date.get(source.id)
+                should_refresh = updated_at is None or now - updated_at >= cooldown
+                fetch_coros.append(self._fetch_external_source(source, refresh=should_refresh))
+            for source in internal_sources:
+                fetch_coros.append(self._fetch_internal_source_comments(source))
+
+            # `return_exceptions=True` is defense in depth: both fetch
+            # helpers already catch their own exceptions internally, but a
+            # stray uncaught error from either must never abort the gather
+            # or take down sibling fetches.
+            io_sources = external_sources + internal_sources
+            fetched = await asyncio.gather(*fetch_coros, return_exceptions=True)
+
+            for source, outcome in zip(io_sources, fetched, strict=True):
+                if isinstance(outcome, BaseException):
+                    logger.error(f"Unexpected error fetching source {source.id}: {outcome}")
+                    continue
+                outcomes_by_id[source.id] = outcome
+
+        # ------------------------------------------------------------
+        # Apply phase: single sequential pass over `eligible_sources`, in
+        # `order_index` order. CONFIG sources are computed here (no I/O
+        # needed); EXTERNAL_URL / INTERNAL_TOKEN sources use the outcome
+        # already fetched above. This is the only phase that mutates
+        # `result`, so dedup/limit/truncation semantics stay exactly what
+        # they'd be for fully sequential processing — just reordered by
+        # `order_index` instead of by source type.
+        # ------------------------------------------------------------
+        for source in eligible_sources:
             if len(result.configs) >= self.max_configs:
                 result.truncated = True
                 return
-            self._apply_config_source(source, result, root_comment_map)
 
-        # EXTERNAL_URL sources: fetch from cache concurrently. Fetching is
-        # pure I/O with no shared-state mutation, so it's safe to parallelize.
-        now = utcnow()
-        cooldown = timedelta(seconds=settings.refresh_cooldown)
+            if source.source_type == SourceType.CONFIG.value:
+                self._apply_config_source(source, result, root_comment_map)
 
-        if external_sources:
-            external_update_date = {
-                data.url_hash: data.updated_at
-                for data in await self.external_repo.get_all_by_field(
-                    self.external_repo.model.url_hash,
-                    [source.external_url for source in external_sources],
-                )
-            }
-
-            fetch_tasks = []
-
-            for source in external_sources:
-                updated_at = external_update_date.get(source.id)
-                should_refresh = False
-                if updated_at is None or now - updated_at >= cooldown:
-                    should_refresh = True
-
-                fetch_tasks.append(
-                    self._fetch_external_source(
-                        source,
-                        refresh=should_refresh,
+            elif source.source_type == SourceType.EXTERNAL_URL.value:
+                external_outcome = outcomes_by_id.get(source.id)
+                if external_outcome is not None:
+                    self._apply_external_outcome(
+                        cast("_ExternalFetchOutcome", external_outcome), result
                     )
-                )
 
-            fetch_external_results = await asyncio.gather(*fetch_tasks)
-
-            # Apply sequentially, in original order, to preserve dedup/limit semantics.
-            for ext_outcome in fetch_external_results:
-                if len(result.configs) >= self.max_configs:
-                    result.truncated = True
-                    return
-
-                self._apply_external_outcome(ext_outcome, result)
-
-        # INTERNAL_TOKEN sources: first concurrently load each nested
-        # subscription's comments (pure I/O, independent of shared state),
-        # then recurse sequentially so that cycle-detection / depth / config
-        # limits and comment-map merges behave exactly as before (recursion
-        # itself mutates shared `resolved_subscriptions` and `result`, so it
-        # cannot be parallelized without changing semantics).
-        if internal_sources:
-            fetch_internal_results = await asyncio.gather(
-                *(self._fetch_internal_source_comments(source) for source in internal_sources)
-            )
-            for int_outcome in fetch_internal_results:
-                if len(result.configs) >= self.max_configs:
-                    result.truncated = True
-                    return
-                await self._apply_internal_outcome(
-                    int_outcome,
-                    resolved_subscriptions,
-                    depth,
-                    result,
-                    root_comment_map,
-                    current_subscription_token,
-                )
+            elif source.source_type == SourceType.INTERNAL_TOKEN.value:
+                internal_outcome = outcomes_by_id.get(source.id)
+                if internal_outcome is not None:
+                    await self._apply_internal_outcome(
+                        cast("_InternalFetchOutcome", internal_outcome),
+                        resolved_subscriptions,
+                        depth,
+                        result,
+                        root_comment_map,
+                        current_subscription_token,
+                    )
 
     # ------------------------------------------------------------------
     # CONFIG sources

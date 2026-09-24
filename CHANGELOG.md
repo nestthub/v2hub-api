@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.3] — 2026-09-24
+
 ### Added
 
 - Added the project logo as a static SVG asset (`static/logo.svg`).
@@ -19,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Normalized the project name and user-facing references from `V2Hub` to `v2hub`.
 - API documentation is now hosted externally at `https://docs.v2hub.link`.
+- Subscription resolution now fetches `EXTERNAL_URL` and `INTERNAL_TOKEN` source data concurrently in a single I/O phase, then applies all source outcomes sequentially in `order_index` order.
+- Subscription resolution now preserves user-defined source ordering across `CONFIG`, `EXTERNAL_URL`, and `INTERNAL_TOKEN` sources while retaining sequential deduplication, truncation, and recursive resolution semantics.
+- Added defense-in-depth handling for unexpected exceptions from concurrent source fetches so one failed source cannot abort sibling fetches.
 
 ### Fixed
 
@@ -33,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - `docs/TYPES.md`
   - `docs/index.html`
   - `serve_docs.py`
+
+---
 
 ## [1.1.2] — 2026-08-26
 
@@ -199,5 +206,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## Reading this history
 
 - Entries are grouped by version tag (`v1.0.2` through `v1.1.1`) and by mainline commits; early commits that predate any tag (including the very first `initial commit`) are folded into the **[1.0.2]** section as the project's foundation.
-- The **[Unreleased]** section reflects changes on the `issue/5-database-limits` branch, which is not yet merged into `main` and has no tag.
+- The **[1.1.3]** section consolidates the changes previously listed under **[Unreleased]** and additional resolver changes made before the release.
 - Merged pull requests and commits such as "Update deploy.yml" or "Merge pull request …" that carry no independent user-facing value are not listed separately; they're folded into the description of the related change.
